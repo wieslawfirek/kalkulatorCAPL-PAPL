@@ -20,6 +20,10 @@ jobs:
         shell: Rscript {0}
         run: |
           source("tests/audit.R")
+      - name: Test repeatability, manual entry, Excel and charts
+        shell: Rscript {0}
+        run: |
+          source("tests/smoke.R")
       - name: Upload audit results
         if: always()
         uses: actions/upload-artifact@v4
