@@ -178,6 +178,31 @@ ui <- fluidPage(
       hr(),selectInput("plot_metric","Obszar wykresu",choices=setNames(names(metric_labels),metric_labels),selected="capl_score"),
       plotOutput("group_plot",height="400px")
     ),
+    tabPanel("Pełne wyniki CAPL-2",
+      br(),
+      p("Wszystkie kolumny zwrócone przez oryginalną funkcję capl::get_capl(), razem z danymi źródłowymi i dodatkowymi interpretacjami PAPL. Brakujące wyniki pozostają puste."),
+      radioButtons("detail_source","Zestaw danych",choices=c("Pojedyncze dziecko"="one","Import Excel"="group"),inline=TRUE),
+      radioButtons("detail_columns","Pokaż kolumny",choices=c("Wszystkie"="all","Wyniki obliczone i interpretacje"="derived","Dane wejściowe"="raw"),inline=TRUE),
+      verbatimTextOutput("detail_counts"),
+      DTOutput("detail_table"),
+      downloadButton("download_full","Pobierz pełne wyniki XLSX"),
+      hr(),
+      h4("Słownik zmiennych"),
+      p("Nazwy są zachowane z oryginalnego pakietu R. Klasyfikacje polskie mają prefiks PAPL_, a wywołane dodatkowo kanadyjskie – CAPL_."),
+      DTOutput("dictionary_table")
+    ),
+    tabPanel("Wizualizacje",
+      br(),
+      p("Oryginalny wykres kategorii capl::get_capl_bar_plot() dla danych grupowych i dodatkowe zestawienia wyników domen."),
+      radioButtons("viz_source","Dane",choices=c("Pojedyncze dziecko"="one","Import Excel"="group"),inline=TRUE),
+      selectInput("viz_metric","Wynik lub test",choices=setNames(names(metric_labels),metric_labels),selected="capl_score"),
+      h4("Rozkład wyników"),
+      plotOutput("viz_distribution",height="360px"),
+      h4("Oryginalny wykres CAPL-2"),
+      plotOutput("viz_capl",height="360px"),
+      h4("Domeny – procent maksymalnej punktacji"),
+      plotOutput("viz_domains",height="360px")
+    ),
     tabPanel("Normy PAPL",
       br(),p("Zakresy referencyjne według płci i wieku, z raportu WF z AWF (tabele 56–62)."),
       selectInput("norm_metric","Wybierz obszar",choices=setNames(names(metric_labels),metric_labels)),
@@ -237,6 +262,88 @@ server <- function(input, output, session) {
     needed <- c("age","gender",metric_names,unlist(lapply(metric_names,function(k)c(paste0("PAPL_",k),paste0("CAPL_",k)))))
     d[,intersect(needed,names(d)),drop=FALSE]
   }
+  # Keep all source and derived columns; no results are silently removed from this view.
+  detail_data <- reactive({
+    if (identical(input$detail_source,"group")) group() else individual()
+  })
+  original_input_names <- names(capl::get_capl_demo_data(n=1))
+  select_columns <- function(d, mode="all") {
+    if (identical(mode,"all")) return(d)
+    columns <- if (identical(mode,"raw")) intersect(names(d),original_input_names)
+      else setdiff(names(d),original_input_names)
+    d[,columns,drop=FALSE]
+  }
+  output$detail_counts <- renderText({
+    d <- detail_data();req(d)
+    sprintf("Uczestnicy: %d | Wszystkie kolumny: %d | Wejściowe: %d | Dodatkowe: %d",
+      nrow(d),ncol(d),sum(names(d) %in% original_input_names),
+      sum(!names(d) %in% original_input_names))
+  })
+  output$detail_table <- renderDT({
+    d <- detail_data();req(d)
+    DT::datatable(select_columns(d,input$detail_columns),filter="top",
+      extensions="Buttons",options=list(scrollX=TRUE,scrollY="480px",
+        pageLength=10,dom="Bfrtip",buttons=c("copy","csv","excel")))
+  })
+  output$dictionary_table <- renderDT({
+    d <- detail_data();req(d)
+    nm <- names(d)
+    category <- ifelse(grepl("^PAPL_",nm),"Polska interpretacja",
+      ifelse(grepl("^CAPL_",nm),"Dodatkowa interpretacja kanadyjska",
+        ifelse(nm %in% original_input_names,"Dane źródłowe CAPL-2","Wynik pakietu capl")))
+    DT::datatable(data.frame(zmienna=nm,rodzaj=category),options=list(pageLength=15))
+  })
+  output$download_full <- downloadHandler(
+    filename=function() paste0("PAPL_pelne_wyniki_",Sys.Date(),".xlsx"),
+    content=function(file) {
+      d <- detail_data();req(d)
+      writexl::write_xlsx(list("Wszystkie dane i wyniki"=d,
+        "Słownik zmiennych"=data.frame(zmienna=names(d),
+          rodzaj=ifelse(names(d) %in% original_input_names,"Wejściowa","Wynik / interpretacja"))),file)
+    })
+  viz_data <- reactive({
+    if (identical(input$viz_source,"group")) group() else individual()
+  })
+  output$viz_distribution <- renderPlot({
+    d<-viz_data();req(d); k<-input$viz_metric
+    v<-suppressWarnings(as.numeric(d[[k]]));v<-v[is.finite(v)]
+    validate(need(length(v)>0,"Brak liczbowych wyników dla wybranego obszaru."))
+    if(length(v)<2) {
+      ggplot2::ggplot(data.frame(x=v),ggplot2::aes(x=x))+
+        ggplot2::geom_point(y=1,size=4)+ggplot2::labs(x=metric_labels[[k]],y=NULL)+ggplot2::theme_minimal()
+    } else {
+      ggplot2::ggplot(data.frame(x=v),ggplot2::aes(x=x))+
+        ggplot2::geom_histogram(bins=min(20,max(3,ceiling(sqrt(length(v))))),fill="#2879aa")+
+        ggplot2::labs(x=metric_labels[[k]],y="Liczba uczestników")+ggplot2::theme_minimal()
+    }
+  })
+  output$viz_capl <- renderPlot({
+    d<-viz_data();req(d); k<-input$viz_metric
+    score<-suppressWarnings(as.numeric(d[[k]]))
+    klass<-as.character(d[[paste0("CAPL_",k)]])
+    ok<-is.finite(score)&!is.na(klass)&nzchar(klass)
+    validate(need(sum(ok)>0,"Brak pełnych danych do wykresu kategorii CAPL-2."))
+    capl::get_capl_bar_plot(score=score[ok],interpretation=klass[ok],
+      x_label="Kategorie CAPL-2",y_label=metric_labels[[k]])
+  })
+  output$viz_domains <- renderPlot({
+    d<-viz_data();req(d)
+    keys<-c("pc_score","db_score","mc_score","ku_score")
+    maximum<-c(30,30,30,10)
+    labels<-c("Kompetencje fizyczne","Zachowania codzienne",
+              "Motywacja i pewność siebie","Wiedza i zrozumienie")
+    v<-vapply(keys,function(k) mean(as.numeric(d[[k]]),na.rm=TRUE),numeric(1))
+    v[!is.finite(v)]<-NA_real_
+    validate(need(any(is.finite(v)),"Brak wyników domenowych."))
+    df<-data.frame(domena=labels,procent=100*v/maximum,
+      wynik=paste0(round(v,1)," / ",maximum))
+    ggplot2::ggplot(df,ggplot2::aes(x=reorder(domena,procent),y=procent))+
+      ggplot2::geom_col(fill="#2879aa",na.rm=TRUE)+ggplot2::coord_flip()+
+      ggplot2::geom_text(ggplot2::aes(label=wynik),hjust=-0.12,na.rm=TRUE)+
+      ggplot2::scale_y_continuous(limits=c(0,110),breaks=seq(0,100,20))+
+      ggplot2::labs(x=NULL,y="Procent maksymalnej punktacji",title="Domeny CAPL-2")+
+      ggplot2::theme_minimal()
+  })
   output$individual_summary <- renderUI({
     d <- individual()
     req(d)
