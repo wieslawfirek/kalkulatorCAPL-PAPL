@@ -25,5 +25,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: capl-papl-audit
-          path: audit-results.csv
+          path: |
+            audit-results.csv
+            audit-diagnostics.csv
+            audit-input-cases.csv
           if-no-files-found: warn
