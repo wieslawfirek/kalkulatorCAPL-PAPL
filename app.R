@@ -151,12 +151,12 @@ ui <- fluidPage(
       downloadButton("template","Pobierz oficjalny szablon danych"),
       hr(),verbatimTextOutput("import_status"),
       DTOutput("group_table"),downloadButton("save_group","Pobierz wyniki XLSX"),
-      hr(),selectInput("plot_metric","Obszar wykresu",choices=metric_labels,selected="capl_score"),
+      hr(),selectInput("plot_metric","Obszar wykresu",choices=setNames(names(metric_labels),metric_labels),selected="capl_score"),
       plotOutput("group_plot",height="400px")
     ),
     tabPanel("Normy PAPL",
       br(),p("Zakresy referencyjne według płci i wieku, z raportu WF z AWF (tabele 56–62)."),
-      selectInput("norm_metric","Wybierz obszar",choices=metric_labels),
+      selectInput("norm_metric","Wybierz obszar",choices=setNames(names(metric_labels),metric_labels)),
       DTOutput("norm_table"),
       p(class="small-note","Granice z raportu: pierwsza kategoria poniżej progu początkowego, druga do granicy progresji, trzecia do granicy kategorii sprawny, czwarta powyżej. Wyniki zaokrąglane do precyzji tabel.")
     ),
@@ -228,7 +228,7 @@ server <- function(input, output, session) {
   })
   output$individual_plot <- renderPlot({
     d<-individual();req(d)
-    score<-as.numeric(d[1,c("pc_score","db_score","mc_score","ku_score")])
+    score<-as.numeric(unlist(d[1,c("pc_score","db_score","mc_score","ku_score"),drop=FALSE]))
     validate(need(any(!is.na(score)),"Brak wyników domenowych do wykresu."))
     ggplot(data.frame(domain=factor(names(score),levels=names(score)),value=score),
       aes(x=domain,y=value)) + geom_col(fill="#2879aa",na.rm=TRUE) +
