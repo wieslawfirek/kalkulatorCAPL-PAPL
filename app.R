@@ -163,6 +163,7 @@ ui <- fluidPage(
           actionButton("calculate_one","Oblicz",class="btn-primary")
         ),
         mainPanel(h3("Wyniki i interpretacja"),p("Niewyliczalne wyniki pozostają puste."),
+          uiOutput("individual_summary"),
           DTOutput("individual_table"),downloadButton("save_individual","Pobierz wyniki XLSX"),
           hr(),plotOutput("individual_plot",height="350px"))
       )
@@ -236,6 +237,20 @@ server <- function(input, output, session) {
     needed <- c("age","gender",metric_names,unlist(lapply(metric_names,function(k)c(paste0("PAPL_",k),paste0("CAPL_",k)))))
     d[,intersect(needed,names(d)),drop=FALSE]
   }
+  output$individual_summary <- renderUI({
+    d <- individual()
+    req(d)
+    value <- d$capl_score[1]
+    papl <- d$PAPL_capl_score[1]
+    canada <- d$CAPL_capl_score[1]
+    box <- function(label, value) div(style="display:inline-block;vertical-align:top;min-width:160px;margin:5px;padding:14px;border-radius:10px;background:#e8f1f8;",
+      tags$small(label), tags$h3(style="margin:5px 0;",ifelse(is.na(value),"Brak danych",as.character(value))))
+    div(
+      box("Wynik ogólny / 100", if(is.na(value)) NA_character_ else format(round(value,1),decimal.mark=",",nsmall=1)),
+      box("Normy PAPL", papl),
+      box("Normy CAPL-2", canada)
+    )
+  })
   output$individual_table <- renderDT({req(individual());datatable(display_cols(individual()),options=list(scrollX=TRUE,pageLength=5))})
   output$group_table <- renderDT({req(group());datatable(display_cols(group()),options=list(scrollX=TRUE,pageLength=10))})
   output$import_status <- renderText({
@@ -258,11 +273,18 @@ server <- function(input, output, session) {
   })
   output$individual_plot <- renderPlot({
     d<-individual();req(d)
-    score<-as.numeric(unlist(d[1,c("pc_score","db_score","mc_score","ku_score"),drop=FALSE]))
+    keys <- c("pc_score","db_score","mc_score","ku_score")
+    score <- vapply(keys,function(k) as.numeric(d[[k]][1]),numeric(1))
     validate(need(any(!is.na(score)),"Brak wyników domenowych do wykresu."))
-    ggplot(data.frame(domain=factor(names(score),levels=names(score)),value=score),
-      aes(x=domain,y=value)) + geom_col(fill="#2879aa",na.rm=TRUE) +
-      labs(x=NULL,y="Wynik punktowy",title="Wyniki domenowe") + theme_minimal()
+    plot_data <- data.frame(domain=factor(c("Kompetencje fizyczne",
+      "Zachowania codzienne","Motywacja i pewność siebie","Wiedza i zrozumienie"),
+      levels=c("Kompetencje fizyczne","Zachowania codzienne",
+               "Motywacja i pewność siebie","Wiedza i zrozumienie")),
+      value=unname(score))
+    ggplot(plot_data,aes(x=domain,y=value)) +
+      geom_col(fill="#2879aa",na.rm=TRUE) +
+      coord_flip() + labs(x=NULL,y="Wynik punktowy",title="Wyniki domenowe") +
+      theme_minimal()
   })
   output$template <- downloadHandler(filename=function() "CAPL2_szablon.xlsx",
     content=function(file){
