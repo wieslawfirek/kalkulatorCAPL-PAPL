@@ -83,7 +83,11 @@ process_data <- function(raw, supplied=NULL) {
   if (any(!is.na(raw$age) & !(raw$age %in% 8:12)))
     stop("Normy są dostępne wyłącznie dla wieku 8–12 lat.",call.=FALSE)
   raw$gender <- as.character(raw$gender)
-  if (any(is.na(raw$gender) | !raw$gender %in% c("Girl","Boy"))) stop("Płeć musi być zakodowana jako Girl lub Boy.",call.=FALSE)
+  # CAPL demo files can use longer English labels; normalize explicitly supported values.
+  g <- tolower(trimws(raw$gender))
+  raw$gender <- ifelse(g %in% c("girl","female","f","dziewczynka","k"),"Girl",
+                 ifelse(g %in% c("boy","male","m","chłopiec","chlopiec"),"Boy",NA_character_))
+  if (anyNA(raw$gender)) stop("Nieznany kod płci. Użyj Girl/Boy lub Female/Male.",call.=FALSE)
   # Nie można bezpiecznie użyć zgadywanych wartości ani zastępować braków zerami.
   res <- with_fixed_rng(capl::get_capl(as.data.frame(raw)))
   if (!is.null(supplied)) {
