@@ -20,7 +20,7 @@ jobs:
         run: |
           options(repos = c(CRAN = "https://cloud.r-project.org"))
           install.packages(c("rsconnect", "renv"))
-          rsconnect::writeManifest(appDir = ".")
+          rsconnect::writeManifest(appDir = ".", appMode = "shiny")
           stopifnot(file.exists("manifest.json"))
           manifest <- jsonlite::fromJSON("manifest.json", simplifyVector = FALSE)
           stopifnot(is.list(manifest), length(manifest) > 0)
