@@ -85,11 +85,13 @@ process_data <- function(raw, supplied=NULL) {
   raw$gender <- as.character(raw$gender)
   # CAPL demo files can use longer English labels; normalize explicitly supported values.
   g <- tolower(trimws(raw$gender))
-  if (anyNA(g) || any(!g %in% c("girl","female","f","dziewczynka","k",
-    "boy","male","m","chłopiec","chlopiec")))
-    stop(paste0("Nieznany kod płci: ", paste(unique(raw$gender[is.na(g) | !g %in% c("girl","female","f","dziewczynka","k","boy","male","m","chłopiec","chlopiec")]),collapse=", ")),call.=FALSE)
-  # Preserve the original CAPL coding for capl::get_capl().
-  # Polish classification normalizes the label separately.
+  allowed_gender <- c("girl","female","f","g","dziewczynka","k",
+                      "boy","male","m","b","chłopiec","chlopiec")
+  unknown <- !is.na(g) & nzchar(g) & !(g %in% allowed_gender)
+  if (any(unknown)) stop(paste0("Nieznany kod płci: ",
+    paste(unique(raw$gender[unknown]),collapse=", ")),call.=FALSE)
+  # Preserve original CAPL inputs, including b/g and missing gender.
+  # Missing gender can yield NA interpretations; it must not abort a whole batch.
   # Nie można bezpiecznie użyć zgadywanych wartości ani zastępować braków zerami.
   res <- with_fixed_rng(capl::get_capl(as.data.frame(raw)))
   if (!is.null(supplied)) {
