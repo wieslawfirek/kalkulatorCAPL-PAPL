@@ -7,8 +7,11 @@ raw <- capl::get_capl_demo_data(n=120)
 # Limit the parity comparison to the documented common age range.
 raw <- raw[!is.na(raw$age) & raw$age %in% 8:12, , drop=FALSE]
 stopifnot(nrow(raw) > 0)
+set.seed(20261018)
 baseline <- capl::get_capl(raw)
+set.seed(20261018)
 repeat_direct <- capl::get_capl(raw)
+set.seed(20261018)
 out <- process_data(raw)
 # Diagnostic comparison to detect nondeterministic reference scores.
 compare_cols <- intersect(c("db_score","capl_score"),names(baseline))
@@ -55,10 +58,11 @@ for(i in seq_len(nrow(norms))) {
 file<-tempfile(fileext=".xlsx")
 writexl::write_xlsx(raw,file)
 imported<-as.data.frame(readxl::read_excel(file))
+set.seed(20261018)
 imported_out<-process_data(imported)
 xa<-as.numeric(baseline$capl_score); xb<-as.numeric(imported_out$capl_score)
 bad_import<-which(is.na(xa)!=is.na(xb) | (!is.na(xa)&!is.na(xb)&abs(xa-xb)>1e-8))
-record("XLSX import numeric comparison",length(bad_import)==0,
+record("XLSX import numeric comparison (same RNG seed)",length(bad_import)==0,
 paste("mismatches:",length(bad_import),"examples:",
 paste(head(sprintf("row%d: %s vs %s",bad_import,as.character(xa[bad_import]),as.character(xb[bad_import])),8),collapse="; ")))
 # Check individual form data with a minimal set of values
