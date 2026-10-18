@@ -81,6 +81,11 @@ diag <- data.frame(row=idx, baseline_db=baseline$db_score[idx],
 write.csv(diag,"audit-diagnostics.csv",row.names=FALSE)
 write.csv(raw[idx,,drop=FALSE],"audit-input-cases.csv",row.names=FALSE)
 
-cat("\nAUDIT RESULTS:\n");print(summary[summary$status=="FAIL",],row.names=FALSE)
+cat("\nAUDIT RESULTS (ALL):\n")
+print(summary, row.names=FALSE, right=FALSE)
+cat("\nDISCREPANCY DIAGNOSTICS:\n")
+print(diag, row.names=FALSE)
+cat("\nFAILED TESTS:\n")
+print(summary[summary$status=="FAIL",], row.names=FALSE, right=FALSE)
 cat("\nPassed:",sum(summary$status=="PASS"),"/",nrow(summary),"\n")
 if(any(summary$status=="FAIL"))stop("AUDIT HAS FAILURES: inspect audit-results.csv")
