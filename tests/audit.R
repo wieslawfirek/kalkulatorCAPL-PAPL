@@ -8,7 +8,16 @@ raw <- capl::get_capl_demo_data(n=120)
 raw <- raw[!is.na(raw$age) & raw$age %in% 8:12, , drop=FALSE]
 stopifnot(nrow(raw) > 0)
 baseline <- capl::get_capl(raw)
+repeat_direct <- capl::get_capl(raw)
 out <- process_data(raw)
+# Diagnostic comparison to detect nondeterministic reference scores.
+compare_cols <- intersect(c("db_score","capl_score"),names(baseline))
+for (key in compare_cols) {
+  a <- baseline[[key]]; b <- repeat_direct[[key]]
+  mismatches <- which((is.na(a)!=is.na(b)) | (!is.na(a)&!is.na(b)&abs(a-b)>1e-8))
+  cat("DIRECT REPEAT:",key,"mismatches",length(mismatches),"rows:",paste(head(mismatches,15),collapse=","),"\n")
+}
+
 numeric_keys <- intersect(c("pacer_20m_laps","pacer_score","plank_score","camsa_score",
  "pc_score","db_score","mc_score","ku_score","capl_score"),names(baseline))
 stopifnot(nrow(out)==nrow(baseline))
@@ -60,6 +69,18 @@ manual_out<-process_data(manual)
 record("Manual raw-data CAPL parity",isTRUE(all.equal(
  capl::get_capl(manual)$pc_score,manual_out$pc_score,check.attributes=FALSE)))
 write.csv(summary,"audit-results.csv",row.names=FALSE,fileEncoding="UTF-8")
+# Reproducible diagnostics limited to synthetic demo records.
+idx <- unique(c(46,80))
+idx <- idx[idx <= nrow(raw)]
+diag <- data.frame(row=idx, baseline_db=baseline$db_score[idx],
+  second_direct_db=repeat_direct$db_score[idx], application_db=out$db_score[idx],
+  baseline_capl=baseline$capl_score[idx],
+  second_direct_capl=repeat_direct$capl_score[idx],
+  application_capl=out$capl_score[idx],
+  excel_capl=imported_out$capl_score[idx])
+write.csv(diag,"audit-diagnostics.csv",row.names=FALSE)
+write.csv(raw[idx,,drop=FALSE],"audit-input-cases.csv",row.names=FALSE)
+
 cat("\nAUDIT RESULTS:\n");print(summary[summary$status=="FAIL",],row.names=FALSE)
 cat("\nPassed:",sum(summary$status=="PASS"),"/",nrow(summary),"\n")
 if(any(summary$status=="FAIL"))stop("AUDIT HAS FAILURES: inspect audit-results.csv")
