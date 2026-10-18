@@ -19,8 +19,15 @@ jobs:
         shell: Rscript {0}
         run: |
           options(repos = c(CRAN = "https://cloud.r-project.org"))
-          install.packages(c("rsconnect", "renv"))
-          rsconnect::writeManifest(appDir = ".", appMode = "shiny")
+          install.packages(c("renv", "rsconnect"))
+          renv::restore(prompt = FALSE)
+          # rsconnect must inspect the actual installed dependencies.
+          # Do not rely on a lockfile alone when generating its manifest.
+          if (!requireNamespace("rsconnect", quietly = TRUE)) {
+            install.packages("rsconnect")
+          }
+          options(error = function() { traceback(30); quit(status = 1) })
+          rsconnect::writeManifest(appDir = ".", appMode = "shiny", verbose = TRUE)
           stopifnot(file.exists("manifest.json"))
           manifest <- jsonlite::fromJSON("manifest.json", simplifyVector = FALSE)
           stopifnot(is.list(manifest), length(manifest) > 0)
