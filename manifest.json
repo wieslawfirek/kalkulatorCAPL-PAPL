@@ -2618,6 +2618,9 @@
     }
   },
   "files": {
+    ".github/workflows/audit.yml": {
+      "checksum": "4d478234797e1e9e79b874b3a9d8e0f0"
+    },
     ".github/workflows/generate-manifest.yml": {
       "checksum": "e85a26b0ebe6693c3e07b992fe2a2ffc"
     },
@@ -2625,10 +2628,10 @@
       "checksum": "3f491553446f908508daabdd2f746429"
     },
     ".Rprofile": {
-      "checksum": "7661e9cbd17e150123603c8894af101b"
+      "checksum": "c4de007557cad56faa2ba9b27669cbb6"
     },
     "app.R": {
-      "checksum": "1c7b701da49e6b3497ac16d9c44bb352"
+      "checksum": "ab6293d09e129a649148433308404cd9"
     },
     "data/papl_norms.csv": {
       "checksum": "ae741b7c74c7af6b1026d6f6956b69a8"
@@ -2641,6 +2644,12 @@
     },
     "renv.lock": {
       "checksum": "f2926e38a6ed7c00f0cc79d067b7eb00"
+    },
+    "tests/audit.R": {
+      "checksum": "90885b26aced2a9f429c025aecc79cc2"
+    },
+    "tests/smoke.R": {
+      "checksum": "6b3d3961ae792ee884587b335b7b5d9d"
     }
   },
   "users": null
