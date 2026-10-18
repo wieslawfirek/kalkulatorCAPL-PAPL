@@ -22,7 +22,10 @@ jobs:
           install.packages("renv")
           renv::init(bare = TRUE)
           renv::install(c("shiny", "capl", "readxl", "writexl", "ggplot2", "DT"))
-          renv::snapshot(prompt = FALSE)
+          renv::snapshot(prompt = FALSE, force = TRUE)
+          lock <- jsonlite::fromJSON("renv.lock", simplifyVector = FALSE)
+          stopifnot(length(lock$Packages) > 0)
+          stopifnot(all(vapply(lock$Packages, function(pkg) !is.null(pkg$Title) && !is.null(pkg$Description), logical(1))))
           stopifnot(file.exists("renv.lock"))
       - name: Commit dependency lockfile
         run: |
