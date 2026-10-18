@@ -87,7 +87,7 @@ process_data <- function(raw, supplied=NULL) {
   g <- tolower(trimws(raw$gender))
   if (anyNA(g) || any(!g %in% c("girl","female","f","dziewczynka","k",
     "boy","male","m","chłopiec","chlopiec")))
-    stop("Nieznany kod płci. Użyj Girl/Boy lub Female/Male.",call.=FALSE)
+    stop(paste0("Nieznany kod płci: ", paste(unique(raw$gender[is.na(g) | !g %in% c("girl","female","f","dziewczynka","k","boy","male","m","chłopiec","chlopiec")]),collapse=", ")),call.=FALSE)
   # Preserve the original CAPL coding for capl::get_capl().
   # Polish classification normalizes the label separately.
   # Nie można bezpiecznie użyć zgadywanych wartości ani zastępować braków zerami.
