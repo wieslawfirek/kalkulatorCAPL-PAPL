@@ -47,6 +47,19 @@ as_number <- function(v) {
 get_metric <- function(d,key) {
   if (key %in% names(d)) as_number(d[[key]]) else NA_real_
 }
+# Isolate capl's random state to make repeated computations reproducible.
+# This avoids changing the RNG state of other work performed in the same R process.
+with_fixed_rng <- function(expr, seed=20261018L) {
+  had_seed <- exists(".Random.seed", envir=.GlobalEnv, inherits=FALSE)
+  if (had_seed) old_seed <- get(".Random.seed", envir=.GlobalEnv)
+  on.exit({
+    if (had_seed) assign(".Random.seed",old_seed,envir=.GlobalEnv)
+    else if (exists(".Random.seed",envir=.GlobalEnv,inherits=FALSE))
+      rm(".Random.seed",envir=.GlobalEnv)
+  },add=TRUE)
+  set.seed(seed)
+  force(expr)
+}
 value_or_na <- function(x) if (is.null(x) || length(x)==0 || is.na(x)) NA_real_ else as.numeric(x)
 one_row <- function(input) {
   d <- as.data.frame(as.list(setNames(rep(NA_real_, 9),
@@ -66,11 +79,13 @@ process_data <- function(raw, supplied=NULL) {
     stop("Brak wymaganych kolumn age oraz gender.", call.=FALSE)
   if (!nrow(raw)) stop("Plik nie zawiera danych.", call.=FALSE)
   raw$age <- suppressWarnings(as.numeric(raw$age))
+  if (anyNA(raw$age)) stop("Każdy wiersz musi zawierać wiek.",call.=FALSE)
   if (any(!is.na(raw$age) & !(raw$age %in% 8:12)))
     stop("Normy są dostępne wyłącznie dla wieku 8–12 lat.",call.=FALSE)
   raw$gender <- as.character(raw$gender)
+  if (any(is.na(raw$gender) | !raw$gender %in% c("Girl","Boy"))) stop("Płeć musi być zakodowana jako Girl lub Boy.",call.=FALSE)
   # Nie można bezpiecznie użyć zgadywanych wartości ani zastępować braków zerami.
-  res <- capl::get_capl(as.data.frame(raw))
+  res <- with_fixed_rng(capl::get_capl(as.data.frame(raw)))
   if (!is.null(supplied)) {
     for (k in names(supplied)) if (!is.na(supplied[[k]])) res[[k]] <- supplied[[k]]
     # Wynik z podanych domen wyliczamy oryginalną funkcją pakietu.
@@ -175,7 +190,9 @@ server <- function(input, output, session) {
     raw <- one_row(input)
     supplied <- lapply(c("pc_score","db_score","mc_score","ku_score"),function(k) value_or_na(input[[k]]))
     names(supplied) <- c("pc_score","db_score","mc_score","ku_score")
-    process_data(raw,supplied)
+    tryCatch(process_data(raw,supplied),error=function(e) {
+      showNotification(conditionMessage(e),type="error",duration=12);NULL
+    })
   })
   group <- eventReactive(input$calculate_group,{
     req(input$excel)
@@ -189,6 +206,11 @@ server <- function(input, output, session) {
       for(k in supplied_keys){
         value <- suppressWarnings(as.numeric(dat[[k]]))
         computed[[k]] <- ifelse(is.na(value),computed[[k]],value)
+      }
+      # Recalculate overall score if domain values were explicitly overridden.
+      if (length(intersect(c("pc_score","db_score","mc_score","ku_score"),supplied_keys))>0) {
+        computed$capl_score <- capl::get_capl_score(computed$pc_score,computed$db_score,
+          computed$mc_score,computed$ku_score)
       }
       # Recompute both types of classifications from the final scores.
       for(k in metric_names){
