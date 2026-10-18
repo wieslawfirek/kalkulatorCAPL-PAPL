@@ -18,8 +18,11 @@ record <- function(name, ok, detail="") {
 }
 for (k in numeric_keys) {
  a<-baseline[[k]]; b<-out[[k]]
- record(paste0("CAPL numeric ",k),isTRUE(all.equal(a,b,check.attributes=FALSE)),
-   paste("Rows:",length(a)))
+ equal <- isTRUE(all.equal(as.numeric(a),as.numeric(b),check.attributes=FALSE,tolerance=1e-8))
+ bad <- which((is.na(a) != is.na(b)) | (!is.na(a) & !is.na(b) & abs(a-b)>1e-8))
+ record(paste0("CAPL numeric ",k),equal,
+   paste("Rows:",length(a)," mismatches:",length(bad)," examples:",
+   paste(head(sprintf("row%d: %s vs %s",bad,as.character(a[bad]),as.character(b[bad])),8),collapse="; ")))
 }
 # Compare original classification fields on all available valid scores
 for(k in c("capl","pc","db","mc","ku")) {
@@ -37,15 +40,18 @@ for(i in seq_len(nrow(norms))) {
   expected<-c(1,2,2,3,3,4)
   observed<-vapply(v,function(z) match(papl_class(n$age,n$sex,z,n$metric),levels_pl),integer(1))
   record(paste0("PAPL boundaries ",n$sex," ",n$age," ",n$metric),
-    identical(observed,expected),paste("expected:",paste(expected,collapse="/"),"actual:",paste(observed,collapse="/")))
+    isTRUE(all(observed == expected)),paste("expected:",paste(expected,collapse="/"),"actual:",paste(observed,collapse="/")))
 }
 # Real import from the generated demo sample, same 60 columns.
 file<-tempfile(fileext=".xlsx")
 writexl::write_xlsx(raw,file)
 imported<-as.data.frame(readxl::read_excel(file))
 imported_out<-process_data(imported)
-record("XLSX import numeric comparison",isTRUE(all.equal(
- as.numeric(baseline$capl_score),as.numeric(imported_out$capl_score),check.attributes=FALSE)))
+xa<-as.numeric(baseline$capl_score); xb<-as.numeric(imported_out$capl_score)
+bad_import<-which(is.na(xa)!=is.na(xb) | (!is.na(xa)&!is.na(xb)&abs(xa-xb)>1e-8))
+record("XLSX import numeric comparison",length(bad_import)==0,
+paste("mismatches:",length(bad_import),"examples:",
+paste(head(sprintf("row%d: %s vs %s",bad_import,as.character(xa[bad_import]),as.character(xb[bad_import])),8),collapse="; ")))
 # Check individual form data with a minimal set of values
 manual<-data.frame(age=10,gender="Girl",pacer_lap_distance=20,pacer_laps=25,
  plank_time=75,camsa_skill_score1=10,camsa_time1=25,
