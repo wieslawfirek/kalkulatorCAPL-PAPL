@@ -3,6 +3,10 @@ library(capl)
 source("app.R", local=TRUE)
 set.seed(142)
 raw <- capl::get_capl_demo_data(n=120)
+# CAPL's synthetic data may include ages outside the Polish normative range.
+# Limit the parity comparison to the documented common age range.
+raw <- raw[!is.na(raw$age) & raw$age %in% 8:12, , drop=FALSE]
+stopifnot(nrow(raw) > 0)
 baseline <- capl::get_capl(raw)
 out <- process_data(raw)
 numeric_keys <- intersect(c("pacer_20m_laps","pacer_score","plank_score","camsa_score",
