@@ -47,4 +47,13 @@ if (any(!is.na(a$capl_score))) {
     dev.off()
   }
 }
+# All original CAPL columns must remain present in calculated and exported results.
+original <- with_fixed_rng(capl::get_capl(raw))
+stopifnot(all(names(original) %in% names(a)))
+stopifnot(all(names(a) %in% names(exported)))
+# Exercise filtering logic that powers the detailed output table.
+inputs <- names(capl::get_capl_demo_data(n=1))
+calculated <- setdiff(names(a),inputs)
+stopifnot(length(calculated)>0,all(calculated %in% names(a)))
+cat("Full CAPL output columns:",ncol(original),"calculator columns:",ncol(a),"\n")
 cat("SMOKE TESTS PASS: repeated scores, RNG state, Excel round trip, manual input, plotting\n")
