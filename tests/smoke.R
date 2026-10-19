@@ -28,4 +28,21 @@ if(any(ok)){
  if(inherits(p,"ggplot"))print(p)
  dev.off()
 }
+# New CAPL-2 codebook and multi-sheet research workbook.
+cb <- codebook(original_fields)
+stopifnot(nrow(cb)==60,identical(as.character(cb$Zmienna),original_fields))
+tables <- research_tables(a,"capl_score")
+stopifnot(all(c("Profil domen","Kategorie","Kategorie wg plci",
+ "Kategorie wg wieku","Status domen","Braki") %in% names(tables)))
+report <- tempfile(fileext=".xlsx")
+writexl::write_xlsx(c(list("Pelne wyniki"=a,"Ksiazka kodow"=cb),tables),report)
+stopifnot(all(c("Pelne wyniki","Ksiazka kodow","Kategorie","Status domen") %in%
+ readxl::excel_sheets(report)))
+stopifnot(nrow(readxl::read_excel(report,sheet="Pelne wyniki"))==nrow(a))
+# Test the eight derived plots and original CAPL plot.
+for (type in unname(plot_choices)) {
+  png(tempfile(fileext=".png"))
+  tryCatch({p<-research_plot(a,type,"capl_score");print(p)},
+    finally=dev.off())
+}
 cat("BATCH SMOKE TEST PASS: reproducibility, input/output, original graphic, optional PAPL\n")
