@@ -30,7 +30,10 @@ if(any(ok)){
 }
 # New CAPL-2 codebook and multi-sheet research workbook.
 cb <- codebook(original_fields)
-stopifnot(nrow(cb)==60,identical(as.character(cb$Zmienna),original_fields))
+stopifnot(nrow(cb)==60,identical(as.character(cb$Zmienna),original_fields),
+  all(c("Dopuszczalne_wartosci","Znaczenie_kodow","Uwagi") %in% names(cb)),
+  all(nzchar(cb$Dopuszczalne_wartosci)),
+  identical(cb$Dopuszczalne_wartosci[cb$Zmienna=="csappa1"],"1, 2, 3, 4"))
 tables <- research_tables(a,"capl_score")
 stopifnot(all(c("Profil domen","Kategorie","Kategorie wg plci",
  "Kategorie wg wieku","Status domen","Braki") %in% names(tables)))
