@@ -38,6 +38,57 @@ codebook <- function(fields) {
     Zrodlo="Barnes i Guerrero (2021), tabela 1, sekcja 2.3; podręcznik CAPL-2",
     stringsAsFactors=FALSE,check.names=FALSE)
 }
+# Verified coding for all 60 source columns. Preserve the original names/order.
+base_codebook <- codebook
+codebook <- function(fields) {
+  d <- base_codebook(fields)
+  d$Dopuszczalne_wartosci <- ""
+  d$Znaczenie_kodow <- ""
+  d$Uwagi <- "Wprowadź odpowiedź surową (nie punktację obliczoną). Braki: pusta komórka."
+  for(i in seq_along(fields)) {
+    x<-fields[[i]]
+    allowed <- if(x=="age") "8–12; wiek w pełnych latach" else
+      if(x=="gender") "Girl/Boy; g/b; Female/Male; f/m; również 1/0" else
+      if(x=="pacer_lap_distance") "15 lub 20" else
+      if(x=="pacer_laps") "Liczba całkowita ≥ 0; ważność sprawdza capl" else
+      if(x=="plank_time") "Czas w sekundach ≥ 0" else
+      if(grepl("^camsa_skill_score[12]$",x)) "Punkty za umiejętności CAMSA wg protokołu (0–14)" else
+      if(grepl("^camsa_time[12]$",x)) "Czas próby CAMSA w sekundach" else
+      if(grepl("^steps[1-7]$",x)) "Liczba kroków w danym dniu ≥ 0" else
+      if(grepl("^time_on[1-7]$|^time_off[1-7]$",x)) "Tekst HH:MM lub format 12 h, np. 07:30, 7:30am" else
+      if(grepl("^non_wear_time[1-7]$",x)) "Liczba minut nienoszenia ≥ 0" else
+      if(x=="self_report_pa") "0–7 dni" else
+      if(grepl("^csappa[1-6]$",x)) "1, 2, 3, 4" else
+      if(grepl("^why_active[1-3]$|^feelings_about_pa[1-3]$",x)) "1, 2, 3, 4, 5" else
+      if(x %in% c("pa_guideline","crf_means","ms_means","sports_skill")) "1, 2, 3, 4" else
+      if(x %in% c("pa_is","pa_is_also","improve","increase","when_cooling_down","heart_rate")) "1–10" else "Sprawdź protokół"
+    meaning <- if(grepl("^csappa[1-6]$",x))
+      "1 = REALLY TRUE / some kids; 2 = SORT OF TRUE / some kids; 3 = REALLY TRUE / other kids; 4 = SORT OF TRUE / other kids"
+      else if(grepl("^why_active[1-3]$|^feelings_about_pa[1-3]$",x))
+      "Kod kolejnej opcji odpowiedzi na pięciostopniowej skali. 1–5 to kody wejściowe, nie wynik końcowy."
+      else if(x %in% c("pa_guideline","crf_means","ms_means","sports_skill"))
+      "Numer odpowiedzi 1–4 według oryginalnego formularza. Prawidłowość ocenia capl."
+      else if(x %in% c("pa_is","pa_is_also","improve","increase","when_cooling_down","heart_rate"))
+      "Numer odpowiedzi 1–10 z listy słów w zadaniu z lukami (historyjka Sally)."
+      else if(x=="self_report_pa")
+      "Liczba dni w ostatnich 7 dniach, w których osiągnięto co najmniej 60 minut MVPA."
+      else if(x=="gender") "1 / f / g / Female / Girl = dziewczynka; 0 / m / b / Male / Boy = chłopiec."
+      else if(grepl("^time_on[1-7]$",x)) "Godzina założenia krokomierza w danym dniu."
+      else if(grepl("^time_off[1-7]$",x)) "Godzina zdjęcia krokomierza w danym dniu."
+      else if(grepl("^non_wear_time[1-7]$",x)) "Minuty przerw w noszeniu krokomierza w ciągu dnia."
+      else if(grepl("^steps[1-7]$",x)) "Dzienna liczba kroków; o ważności dnia decyduje pakiet."
+      else if(x=="pacer_lap_distance") "Długość odcinka w metrach. Liczba odcinków w kolumnie pacer_laps."
+      else "Zmienna ilościowa / wynik surowy; szczegóły w oryginalnym podręczniku."
+    d$Dopuszczalne_wartosci[[i]]<-allowed
+    d$Znaczenie_kodow[[i]]<-meaning
+    if(x %in% c("pa_guideline","crf_means","ms_means","sports_skill","pa_is","pa_is_also","improve","increase","when_cooling_down","heart_rate"))
+      d$Uwagi[[i]]<-"Znaczenie każdej opcji należy odczytać z wersji formularza CAPL-2 użytej w badaniu; numer nie oznacza poprawności."
+    if(grepl("^csappa[1-6]$",x))
+      d$Uwagi[[i]]<-if(x %in% c("csappa1","csappa3","csappa5")) "Pozycja predylekcji (predilection_score)." else "Pozycja adekwatności (adequacy_score)."
+  }
+  d
+}
+
 plot_choices <- c("1. Histogram"="hist","2. Boxplot według wieku i płci"="box",
  "4. Profil czterech domen"="domains","5. Udział kategorii CAPL-2"="categories",
  "6. Kategorie według płci"="gender","7. Kategorie według wieku"="age",
