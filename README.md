@@ -1,32 +1,46 @@
-# PAPL Calculator (prototyp)
+# CAPL-2 – pełne przeliczanie danych (R Shiny)
 
-Aplikacja R Shiny wykorzystująca oryginalny pakiet [capl](https://cran.r-project.org/package=capl) do obliczania CAPL-2 oraz polskie zakresy referencyjne PAPL (8–12 lat).
+Aplikacja korzysta bezpośrednio z pakietu R **capl** (Barnes & Guerrero, 2021, PLOS ONE, doi:10.1371/journal.pone.0243841).
 
-**Status:** wersja testowa, nie do zastosowania klinicznego ani do oceniania dzieci przed walidacją progów i kompletności protokołu.
+## Cel
+
+**Dane surowe (60 pól) → capl::get_capl() → 40 oryginalnych zmiennych wynikowych.**
+
+Nie jest to kalkulator dla pojedynczego dziecka. Zasadniczym zadaniem aplikacji jest zbiorcze przeliczanie bazy badawczej i przygotowanie wyników do dalszej analizy statystycznej.
+
+## Funkcje
+
+- Import XLSX/CSV (wiele uczestników), pusty szablon 60 kolumn i dane demonstracyjne.
+- Oryginalne punktowanie, kategorie kanadyjskie, statusy kompletności i reguły braków pakietu `capl`.
+- Pełny podgląd 40 wyliczonych zmiennych oraz 60 wejściowych.
+- Kontrola kompletności wyników i brakujących pól.
+- Oryginalny wykres `get_capl_bar_plot()` i dodatkowy histogram.
+- Eksport wszystkich kolumn do XLSX/CSV.
+- Opcjonalne normy polskie PAPL jako **osobna warstwa interpretacyjna** (`PAPL_...`), bez zmiany kanadyjskiego punktowania.
+
+**Uwaga:** normy PAPL wymagają zgodności miary i punktacji. Nie wszystkie polskie miary mają bezpośredni odpowiednik zwracany przez `capl`; nie przypisujemy im kategorii automatycznie bez sprawdzenia.
 
 ## Uruchomienie lokalne
 
-1. Zainstaluj R.
-2. W konsoli R uruchom:
 ```r
-install.packages(c("shiny", "capl", "readxl", "writexl", "ggplot2", "DT"))
+install.packages(c("shiny","capl","readxl","writexl","ggplot2","DT"))
 shiny::runApp(".")
 ```
 
-## Funkcje
-- Dane pojedynczego dziecka (formularz wyników surowych i opcjonalnie wyników domenowych)
-- Import Excel/CSV dla grup
-- Oryginalne obliczenia `capl::get_capl()`, jeśli dane surowe umożliwiają ich wyliczenie
-- Klasyfikacje PAPL i kanadyjskie klasyfikacje wyliczone przez `capl`
-- Eksport zestawienia do Excel oraz wykresy
+## Audyt
 
-## Ograniczenia
-- Wyniki PAPL są interpretowane w oparciu o dostarczone polskie tabele referencyjne. Wersja 1 nie zmienia algorytmów punktacji CAPL-2.
-- Polskie progi z miejscami dziesiętnymi są stosowane z uwzględnieniem dokładności prezentacji w tabelach; przypadki graniczne należy zweryfikować.
-- Wyniki częściowe pozostają `NA`, jeśli brak danych potrzebnych do wyliczenia.
-- Nie wgrywaj danych identyfikujących dzieci na publicznie hostowaną aplikację przed oceną ochrony danych.
+GitHub Actions: **Audit CAPL-2 and PAPL scoring**. Testy porównują pełny wynik `get_capl()` z wynikiem aplikacji oraz testują granice norm PAPL. Wymagane jest uruchomienie audytu po każdej zmianie.
 
-Źródło norm PAPL: raport *Aktywny dzisiaj dla zdrowia w przyszłości*, tabele 56–62, s. 130–134.
+## Publikacja
 
-## Wdrożenie
-Źródło aplikacji na GitHubie, uruchomienie poprzez shinyapps.io (nie GitHub Pages). Publikację przeprowadź po lokalnych testach, przez `rsconnect`.
+Kod jest w GitHubie, aplikacja działa na Posit Connect Cloud. Po udanym audycie uruchom `Generate Posit manifest`, potem **Republish** w Posit Connect Cloud. Nie publikuj przed pomyślnym zakończeniem testów.
+
+## Prywatność
+
+Przy hostingu Shiny dane wgrywane do aplikacji są przetwarzane na serwerze. Nie przesyłaj danych pozwalających zidentyfikować dzieci bez właściwych zabezpieczeń i podstawy prawnej.
+
+## Źródła
+
+Barnes, J. D., & Guerrero, M. D. (2021). *An R Package for Computing Canadian Assessment of Physical Literacy (CAPL) scores and interpretations from raw data*. PLOS ONE, 16(2), e0243841.
+
+Normy PAPL: przekazany polski raport z tabelami referencyjnymi.
