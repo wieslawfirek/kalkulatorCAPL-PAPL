@@ -5,6 +5,7 @@ library(readxl)
 library(writexl)
 library(ggplot2)
 library(DT)
+source("R/reporting.R", local=TRUE)
 
 norms <- read.csv("data/papl_norms.csv",stringsAsFactors=FALSE)
 original_fields <- names(capl::get_capl_demo_data(n=1))
@@ -98,7 +99,7 @@ ui <- fluidPage(
         checkboxInput("apply_papl","Dodaj polskie klasyfikacje PAPL",TRUE),
         actionButton("calculate","Oblicz wszystkie wyniki (get_capl)",class="btn-primary"),
         hr(),
-        downloadButton("template","Pobierz pusty szablon – 60 pól"),
+        downloadButton("template","Pobierz szablon z książką kodów"),
         br(),br(),
         downloadButton("demo","Pobierz syntetyczne dane przykładowe"),
         p(class="text-muted","Jeden wiersz to jedno dziecko. Zachowaj oryginalne nazwy 60 kolumn. Bez imion, nazwisk i identyfikatorów osobowych.")
@@ -126,11 +127,15 @@ ui <- fluidPage(
     DTOutput("quality_variables")
   ),
   tabPanel("4. Wizualizacje CAPL-2",br(),
-    p("Wykres kategorii generowany funkcją get_capl_bar_plot() z oryginalnego pakietu."),
-    selectInput("metric","Wskaźnik",choices=metrics),
-    plotOutput("original_plot",height="410px"),
-    h4("Dodatkowo: rozkład wyniku"),
-    plotOutput("hist",height="320px")
+    p("Dziewięć wybranych wizualizacji. Wykres nr 8 pochodzi bezpośrednio z pakietu capl; pozostałe są dodatkiem analitycznym."),
+    selectInput("plot_type","Rodzaj wykresu",choices=plot_choices),
+    selectInput("metric","Wskaźnik CAPL-2",choices=metrics),
+    plotOutput("selected_plot",height="520px"),
+    downloadButton("download_plot","Eksport wykresu PNG"),
+    p("Wykres kategorii pokazuje średni wynik punktowy, a nie liczebności. Struktury kategorii prezentowane są oddzielnie."),
+    h4("Dane liczbowe wykorzystane do wykresów"),
+    DTOutput("plot_tables"),
+    downloadButton("export_analysis","Eksport wyników i tabel do Excela")
   ),
   tabPanel("5. Normy PAPL – dodatek",br(),
     p("Opcjonalne klasyfikacje na podstawie polskich tabel normatywnych. Oryginalne wyniki i interpretacje kanadyjskie pozostają niezmienione."),
@@ -215,32 +220,39 @@ server <- function(input,output,session) {
       braki=vapply(d[ks],function(x)sum(is.na(x)),integer(1))),
       options=list(pageLength=40,dom="tip"))
  })
- output$original_plot <- renderPlot({
+ output$selected_plot <- renderPlot({
    d<-results();req(d)
-   k<-input$metric
-   i<-sub("_score$","_interpretation",k)
-   if(k=="capl_score") i<-"capl_interpretation"
-   validate(need(i %in% names(d),"Brak kategorii interpretacyjnej."))
-   ok<-!is.na(d[[k]]) & !is.na(d[[i]])
-   validate(need(sum(ok)>0,"Brak kompletnych wartości do wykresu."))
-   capl::get_capl_bar_plot(score=d[[k]][ok],
-     interpretation=d[[i]][ok],
-     x_label="Kategorie CAPL-2",y_label=k)
+   tryCatch(print(research_plot(d,input$plot_type,input$metric)),
+      error=function(e) validate(need(FALSE,conditionMessage(e))))
  })
- output$hist <- renderPlot({
+ plot_table <- reactive({
    d<-results();req(d)
-   v<-suppressWarnings(as.numeric(d[[input$metric]]))
-   v<-v[is.finite(v)]
-   validate(need(length(v)>0,"Brak wyników do wykresu."))
-   if(length(v)==1) {
-     ggplot(data.frame(x=v),aes(x=x))+geom_point(y=1,size=4)+
-       labs(x=input$metric,y=NULL)+theme_minimal()
-   } else {
-     ggplot(data.frame(x=v),aes(x=x))+
-       geom_histogram(bins=min(30,max(3,ceiling(sqrt(length(v))))),fill="#317da8")+
-       labs(x=input$metric,y="Liczba dzieci")+theme_minimal()
-   }
+   x<-research_tables(d,input$metric)
+   key<-switch(input$plot_type,
+     domains="Profil domen",categories="Kategorie",gender="Kategorie wg plci",
+     age="Kategorie wg wieku",status="Status domen",missing="Braki",
+     "Kategorie")
+   x[[key]]
  })
+ output$plot_tables <- renderDT({
+   DT::datatable(plot_table(),options=list(scrollX=TRUE,pageLength=20))
+ })
+ output$download_plot <- downloadHandler(
+   filename=function()paste0("CAPL2_",input$plot_type,"_",Sys.Date(),".png"),
+   content=function(file) {
+     d<-results();req(d)
+     png(file,width=1600,height=950,res=145)
+     on.exit(dev.off(),add=TRUE)
+     print(research_plot(d,input$plot_type,input$metric))
+   })
+ output$export_analysis <- downloadHandler(
+   filename=function()paste0("CAPL2_raport_",Sys.Date(),".xlsx"),
+   content=function(file) {
+     d<-results();req(d)
+     sheets<-c(list("Pelne wyniki"=d,
+       "Ksiazka kodow"=codebook(original_fields)),research_tables(d,input$metric))
+     writexl::write_xlsx(sheets,file)
+   })
  output$norm_table <- renderDT({
    d<-norms[norms$metric==input$norm_metric,,drop=FALSE]
    DT::datatable(d,options=list(pageLength=12))
@@ -248,7 +260,8 @@ server <- function(input,output,session) {
  output$template <- downloadHandler(filename=function()"CAPL2_60_kolumn_szablon.xlsx",
    content=function(file){
      d<-capl::get_capl_demo_data(n=1)[FALSE,,drop=FALSE]
-     writexl::write_xlsx(d,file)
+     writexl::write_xlsx(list("Dane CAPL2"=d,
+       "Ksiazka kodow"=codebook(original_fields)),file)
    })
  output$demo <- downloadHandler(filename=function()"CAPL2_przykladowe_syntetyczne.xlsx",
    content=function(file){
@@ -260,7 +273,8 @@ server <- function(input,output,session) {
      d<-results();req(d)
      q<-data.frame(zmienna=names(d),rodzaj=ifelse(names(d)%in%original_fields,
        "Dane wejściowe",ifelse(grepl("^PAPL_",names(d)),"PAPL – dodatek","CAPL-2 – wynik")))
-     writexl::write_xlsx(list("Wyniki"=d,"Słownik kolumn"=q),file)
+     writexl::write_xlsx(c(list("Wyniki"=d,"Słownik kolumn"=q,
+       "Ksiazka kodow"=codebook(original_fields)),research_tables(d,"capl_score")),file)
    })
  output$export_csv <- downloadHandler(filename=function()"CAPL2_wyniki.csv",
    content=function(file){d<-results();req(d);write.csv(d,file,row.names=FALSE,na="")})
