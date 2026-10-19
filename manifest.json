@@ -2628,7 +2628,7 @@
       "checksum": "3f491553446f908508daabdd2f746429"
     },
     ".Rprofile": {
-      "checksum": "5f33731e49656e547d1c48112a1fdb54"
+      "checksum": "0382be9b6d2d43ce180c0cb5232d35e4"
     },
     "app.R": {
       "checksum": "617ce5c492760bd2eab25c85b7842070"
@@ -2640,7 +2640,7 @@
       "checksum": "d083985c63fddaf51548a40ea4a8b4f3"
     },
     "R/reporting.R": {
-      "checksum": "9d1b47fe8fe32920bc7d94bcae3c8090"
+      "checksum": "1b46f54357bb3d1b4b6f79678873fc54"
     },
     "README.md": {
       "checksum": "ac94547ccf040ba033e15ec487b1f616"
@@ -2652,7 +2652,7 @@
       "checksum": "068d87e3a37b432e3cbd5b5551babf34"
     },
     "tests/smoke.R": {
-      "checksum": "393615c56a544ac0d05ebb25406e8748"
+      "checksum": "477fa694c68ba22ec607012b384e23f4"
     }
   },
   "users": null
