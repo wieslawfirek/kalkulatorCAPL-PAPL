@@ -1,3 +1,4 @@
+# CAPL-2 research workflow; the original CAPL calculation is never overwritten.
 library(shiny)
 library(capl)
 library(readxl)
@@ -5,403 +6,263 @@ library(writexl)
 library(ggplot2)
 library(DT)
 
-norms <- read.csv("data/papl_norms.csv", stringsAsFactors = FALSE)
-metric_labels <- c(capl_score="Wynik ogólny", pc_score="Kompetencje fizyczne",
-  db_score="Zachowania codzienne", mc_score="Motywacja i pewność siebie",
-  ku_score="Wiedza i zrozumienie", pacer_20m_laps="BEEP-TEST (20 m)",
-  plank_time="DESKA (sekundy)", camsa_skill_time_score="CAMSA (0–28)",
-  step_average="Średnia liczba kroków", self_report_pa="Dni MVPA")
-metric_names <- names(metric_labels)
+norms <- read.csv("data/papl_norms.csv",stringsAsFactors=FALSE)
+original_fields <- names(capl::get_capl_demo_data(n=1))
 levels_pl <- c("Początkujący","Dokonujący postępów","Sprawny","Wyróżniający się")
-protocol_map <- c(capl_score="capl",pc_score="pc",db_score="db",
- mc_score="mc",ku_score="ku",pacer_20m_laps="pacer",
- plank_time="plank",camsa_skill_time_score="camsa",
- step_average="steps",self_report_pa="self_report_pa")
-
-# Granice z raportu mają różną precyzję. Wyniki zaokrąglamy do:
-# 1 miejsca dla wyników punktowych i deski, 0 dla liczby kroków, odcinków, CAMSA i dni MVPA.
-papl_round <- function(x, key) {
-  if (key %in% c("pacer_20m_laps","camsa_skill_time_score","step_average","self_report_pa")) round(x)
-  else round(x, 1)
-}
+# Reference-table columns are transcribed from the supplied PAPL report.
+# Interpretation is an ADD-ON, not part of the authors' capl R package.
 papl_class <- function(age, gender, score, key) {
-  if (length(score) != 1 || is.na(score) || !is.finite(score) ||
-      is.na(age) || is.na(gender) || !(key %in% norms$metric)) return(NA_character_)
-  g <- if (tolower(trimws(as.character(gender))) %in% c("girl","female","f","g","dziewczynka","k")) "Girl" else
-       if (tolower(trimws(as.character(gender))) %in% c("boy","male","m","b","chłopiec","chlopiec")) "Boy" else NA_character_
-  if (is.na(g)) return(NA_character_)
-  n <- norms[norms$sex == g & norms$age == as.numeric(age) & norms$metric == key,]
-  if (nrow(n) != 1) return(NA_character_)
-  v <- papl_round(as.numeric(score),key)
-  # First interval: < lower threshold; next: up to progress_max;
-  # next: up to achieve_max; fourth: higher.
-  if (v < n$begin_max) return(levels_pl[1])
-  if (v <= n$progress_max) return(levels_pl[2])
-  if (v <= n$achieve_max) return(levels_pl[3])
-  levels_pl[4]
+  if (length(score)!=1 || is.na(score) || !is.finite(score) || is.na(age) || is.na(gender))
+    return(NA_character_)
+  g <- tolower(trimws(as.character(gender)))
+  sex <- if(g %in% c("girl","female","f","g","dziewczynka","k","1")) "Girl" else
+    if(g %in% c("boy","male","m","b","chłopiec","chlopiec","0")) "Boy" else NA_character_
+  if(is.na(sex)) return(NA_character_)
+  ref <- norms[norms$sex==sex & norms$age==as.numeric(age) & norms$metric==key,,drop=FALSE]
+  if(nrow(ref)!=1) return(NA_character_)
+  # Thresholds are supplied to the precision displayed in the reference tables.
+  integer_metric <- key %in% c("pacer_20m_laps","camsa_skill_time_score","step_average","self_report_pa")
+  v <- round(as.numeric(score), if(integer_metric) 0 else 1)
+  if(v < ref$begin_max) levels_pl[1] else if(v <= ref$progress_max) levels_pl[2] else
+    if(v <= ref$achieve_max) levels_pl[3] else levels_pl[4]
 }
-as_number <- function(v) {
-  if (is.null(v) || length(v)==0 || all(is.na(v))) return(NA_real_)
-  suppressWarnings(as.numeric(gsub(",", ".", as.character(v[1]), fixed=TRUE)))
-}
-get_metric <- function(d,key) {
-  if (key %in% names(d)) as_number(d[[key]]) else NA_real_
-}
-# Isolate capl's random state to make repeated computations reproducible.
-# This avoids changing the RNG state of other work performed in the same R process.
-with_fixed_rng <- function(expr, seed=20261018L) {
-  had_seed <- exists(".Random.seed", envir=.GlobalEnv, inherits=FALSE)
-  if (had_seed) old_seed <- get(".Random.seed", envir=.GlobalEnv)
+papl_map <- c(capl_score="capl_score",pc_score="pc_score",db_score="db_score",
+ mc_score="mc_score",ku_score="ku_score",pacer_20m_laps="pacer_laps_20m",
+ plank_time="plank_time",camsa_skill_time_score="camsa_skill_time_score2",
+ step_average="step_average",self_report_pa="self_report_pa")
+# Some reference variables require special handling, e.g. CAMSA score before
+# conversion to the domain score. Only use values when demonstrably equivalent.
+papl_map <- papl_map[names(papl_map)!="camsa_skill_time_score"]
+
+run_capl <- function(raw,with_papl=TRUE) {
+  if(!is.data.frame(raw) || !nrow(raw)) stop("Prześlij niepustą tabelę.")
+  if(anyDuplicated(names(raw))) stop("Występują zduplikowane nazwy kolumn.")
+  if(!all(c("age","gender") %in% names(raw)))
+    stop("Brak kolumn age lub gender – zobacz szablon CAPL-2.")
+  # Delegate all scoring, validation, missing values and weighting to original package.
+  # Deterministic seed only shields CAPL's stochastic handling of rare missing cases.
+  had_seed <- exists(".Random.seed",envir=.GlobalEnv,inherits=FALSE)
+  if(had_seed) old_seed <- get(".Random.seed",envir=.GlobalEnv)
   on.exit({
-    if (had_seed) assign(".Random.seed",old_seed,envir=.GlobalEnv)
-    else if (exists(".Random.seed",envir=.GlobalEnv,inherits=FALSE))
+    if(had_seed) assign(".Random.seed",old_seed,envir=.GlobalEnv)
+    else if(exists(".Random.seed",envir=.GlobalEnv,inherits=FALSE))
       rm(".Random.seed",envir=.GlobalEnv)
   },add=TRUE)
-  set.seed(seed)
-  force(expr)
+  set.seed(20261018L)
+  result <- capl::get_capl(raw_data=raw,sort="asis")
+  if(with_papl) {
+    for(key in names(papl_map)) {
+      source <- unname(papl_map[[key]])
+      if(!(source %in% names(result))) next
+      result[[paste0("PAPL_",key)]] <- vapply(seq_len(nrow(result)),function(i)
+        papl_class(result$age[i],result$gender[i],
+          suppressWarnings(as.numeric(result[[source]][i])),key),character(1))
+    }
+  }
+  result
 }
-value_or_na <- function(x) if (is.null(x) || length(x)==0 || is.na(x)) NA_real_ else as.numeric(x)
-one_row <- function(input) {
-  d <- as.data.frame(as.list(setNames(rep(NA_real_, 9),
-    c("pacer_lap_distance","pacer_laps","plank_time","camsa_skill_score1",
-      "camsa_time1","camsa_skill_score2","camsa_time2","self_report_pa","age"))))
-  d$age <- as.integer(input$age)
-  d$gender <- input$gender
-  for (key in intersect(names(d),c("pacer_laps","plank_time","camsa_skill_score1",
-    "camsa_time1","camsa_skill_score2","camsa_time2")))
-    d[[key]] <- value_or_na(input[[key]])
-  d$pacer_lap_distance <- 20
-  d$self_report_pa <- value_or_na(input$self_report_pa)
-  d
-}
-process_data <- function(raw, supplied=NULL) {
-  if (!all(c("age","gender") %in% names(raw)))
-    stop("Brak wymaganych kolumn age oraz gender.", call.=FALSE)
-  if (!nrow(raw)) stop("Plik nie zawiera danych.", call.=FALSE)
-  raw$age <- suppressWarnings(as.numeric(raw$age))
-  if (anyNA(raw$age)) stop("Każdy wiersz musi zawierać wiek.",call.=FALSE)
-  if (any(!is.na(raw$age) & !(raw$age %in% 8:12)))
-    stop("Normy są dostępne wyłącznie dla wieku 8–12 lat.",call.=FALSE)
-  raw$gender <- as.character(raw$gender)
-  # CAPL demo files can use longer English labels; normalize explicitly supported values.
-  g <- tolower(trimws(raw$gender))
-  allowed_gender <- c("girl","female","f","g","dziewczynka","k",
-                      "boy","male","m","b","chłopiec","chlopiec")
-  unknown <- !is.na(g) & nzchar(g) & !(g %in% allowed_gender)
-  if (any(unknown)) stop(paste0("Nieznany kod płci: ",
-    paste(unique(raw$gender[unknown]),collapse=", ")),call.=FALSE)
-  # Preserve original CAPL inputs, including b/g and missing gender.
-  # Missing gender can yield NA interpretations; it must not abort a whole batch.
-  # Nie można bezpiecznie użyć zgadywanych wartości ani zastępować braków zerami.
-  res <- with_fixed_rng(capl::get_capl(as.data.frame(raw)))
-  if (!is.null(supplied)) {
-    for (k in names(supplied)) if (!is.na(supplied[[k]])) res[[k]] <- supplied[[k]]
-    # Wynik z podanych domen wyliczamy oryginalną funkcją pakietu.
-    if (all(vapply(c("pc_score","db_score","mc_score","ku_score"),
-        function(k) k %in% names(res) && !is.na(res[[k]][1]), logical(1))))
-      res$capl_score <- capl::get_capl_score(res$pc_score,res$db_score,res$mc_score,res$ku_score)
-  }
-  for (k in metric_names) {
-    if (!(k %in% names(res))) res[[k]] <- NA_real_
-  }
-  # Wynik surowy CAMSA: maksimum z obu prób (punktacja umiejętności + czasu).
-  if ("camsa_skill_time_score" %in% names(raw)) {
-    res$camsa_skill_time_score <- suppressWarnings(as.numeric(raw$camsa_skill_time_score))
-  } else if (all(c("camsa_skill_time_score1","camsa_skill_time_score2") %in% names(res))) {
-    x <- suppressWarnings(as.numeric(res$camsa_skill_time_score1))
-    y <- suppressWarnings(as.numeric(res$camsa_skill_time_score2))
-    res$camsa_skill_time_score <- ifelse(is.na(x)&is.na(y),NA_real_,pmax(x,y,na.rm=TRUE))
-  }
-  # Możliwość podania średniej liczby kroków jako wyniku gotowego (bez liczenia punktów domeny).
-  if ("step_average" %in% names(raw)) res$step_average <- suppressWarnings(as.numeric(raw$step_average))
-  for (k in metric_names) {
-    res[[paste0("PAPL_", k)]] <- vapply(seq_len(nrow(res)),function(i)
-      papl_class(res$age[i],res$gender[i],get_metric(res[i,,drop=FALSE],k),k),
-      character(1))
-    # Oryginalne kanadyjskie normy liczone funkcją capl, także przy wyniku
-    # domenowym dostarczonym ręcznie (bez dopisywania fikcyjnych wyników surowych).
-    res[[paste0("CAPL_", k)]] <- tryCatch(
-      as.character(capl::get_capl_interpretation(
-        age=res$age,gender=res$gender,score=as.numeric(res[[k]]),protocol=protocol_map[[k]])),
-      error=function(e) rep(NA_character_,nrow(res)))
-  }
-  res
-}
+# Original 40 derived output columns as listed in Barnes & Guerrero (2021), pp. 15–16.
+capl_derived <- c(
+ "pacer_laps_20m","pacer_score","pacer_interpretation","plank_score",
+ "plank_interpretation","camsa_time_score1","camsa_time_score2",
+ "camsa_skill_time_score1","camsa_skill_time_score2","camsa_score",
+ "camsa_interpretation","pc_score","pc_interpretation","pc_status",
+ "step_average","valid_days","step_score","step_interpretation",
+ "self_report_pa_score","db_score","db_interpretation","db_status",
+ "predilection_score","adequacy_score","intrinsic_motivation_score",
+ "pa_competence_score","mc_score","mc_interpretation","mc_status",
+ "pa_guideline_score","crf_means_score","ms_means_score",
+ "sports_skill_score","fill_in_the_blanks_score",
+ "ku_score","ku_interpretation","ku_status",
+ "capl_score","capl_interpretation","capl_status")
+metrics <- c("Wynik ogólny"="capl_score","Kompetencje fizyczne"="pc_score",
+ "Zachowania codzienne"="db_score","Motywacja i pewność siebie"="mc_score",
+ "Wiedza i zrozumienie"="ku_score","PACER"="pacer_score",
+ "Deska"="plank_score","CAMSA"="camsa_score","Kroki"="step_score")
 
 ui <- fluidPage(
-  tags$head(tags$style(HTML("
-    body {background:#f5f8fb;color:#19344d;}
-    .container-fluid {max-width:1200px;}
-    .well {background:white;border:1px solid #dce5ef;border-radius:12px;}
-    h2,h3 {color:#17456b;}
-    .nav-tabs>li.active>a {font-weight:600;}
-    .small-note {color:#526a7d;font-size:12px;}
-  "))),
-  titlePanel("PAPL Calculator | CAPL-2 & PAPL"),
-  p("Obliczenia oryginalnym pakietem R capl oraz niezależna interpretacja według polskich norm PAPL."),
-  tabsetPanel(
-    tabPanel("Jedno dziecko",
-      sidebarLayout(
-        sidebarPanel(
-          h4("Dane dziecka"),
-          selectInput("gender","Płeć",c("Dziewczynka"="Girl","Chłopiec"="Boy")),
-          selectInput("age","Wiek",choices=8:12,selected=10),
-          h4("Wyniki surowe (opcjonalne)"),
-          numericInput("pacer_laps","BEEP-TEST – odcinki 20 m",NA,min=0),
-          numericInput("plank_time","DESKA – sekundy",NA,min=0),
-          numericInput("camsa_skill_score1","CAMSA próba 1 – punkty za umiejętności",NA,min=0,max=14),
-          numericInput("camsa_time1","CAMSA próba 1 – czas w sekundach",NA,min=0),
-          numericInput("camsa_skill_score2","CAMSA próba 2 – punkty za umiejętności",NA,min=0,max=14),
-          numericInput("camsa_time2","CAMSA próba 2 – czas w sekundach",NA,min=0),
-          numericInput("self_report_pa","Dni MVPA (0–7)",NA,min=0,max=7),
-          h4("Gotowe wyniki domen (opcjonalne)"),
-          p(class="small-note","Wpisuj tylko wyniki wcześniej poprawnie obliczone. Braki nie oznaczają zera."),
-          numericInput("pc_score","Kompetencje fizyczne (0–30)",NA,min=0,max=30),
-          numericInput("db_score","Zachowania codzienne (0–30)",NA,min=0,max=30),
-          numericInput("mc_score","Motywacja i pewność siebie (0–30)",NA,min=0,max=30),
-          numericInput("ku_score","Wiedza i zrozumienie (0–10)",NA,min=0,max=10),
-          actionButton("calculate_one","Oblicz",class="btn-primary")
-        ),
-        mainPanel(h3("Wyniki i interpretacja"),p("Niewyliczalne wyniki pozostają puste."),
-          uiOutput("individual_summary"),
-          DTOutput("individual_table"),downloadButton("save_individual","Pobierz wyniki XLSX"),
-          hr(),plotOutput("individual_plot",height="350px"))
+ tags$head(tags$style(HTML("
+   body {background:#f5f8fb;color:#19344d;}
+   .container-fluid{max-width:1350px}
+   h2,h3{color:#17456b}
+   .well{background:white;border-radius:12px}
+ "))),
+ titlePanel("CAPL-2 | Obliczenia i interpretacja wyników"),
+ p("Oryginalny pakiet R capl (Barnes i Guerrero, 2021). Polskie normy PAPL są opcjonalnym rozszerzeniem."),
+ tabsetPanel(
+  tabPanel("1. Import danych",br(),
+    fluidRow(
+      column(5,wellPanel(
+        h4("Prześlij dane surowe CAPL-2"),
+        fileInput("file","Plik Excel / CSV",accept=c(".xlsx",".xls",".csv")),
+        checkboxInput("apply_papl","Dodaj polskie klasyfikacje PAPL",TRUE),
+        actionButton("calculate","Oblicz wszystkie wyniki (get_capl)",class="btn-primary"),
+        hr(),
+        downloadButton("template","Pobierz pusty szablon – 60 pól"),
+        br(),br(),
+        downloadButton("demo","Pobierz syntetyczne dane przykładowe"),
+        p(class="text-muted","Jeden wiersz to jedno dziecko. Zachowaj oryginalne nazwy 60 kolumn. Bez imion, nazwisk i identyfikatorów osobowych.")
+      )),
+      column(7,
+        h4("Status analizy"),verbatimTextOutput("status"),
+        h4("Kontrola wymaganych zmiennych"),tableOutput("quality"),
+        p("Braki i wartości nieprawidłowe przetwarza oryginalny pakiet capl; nie uzupełniamy ich automatycznie zerami.")
       )
-    ),
-    tabPanel("Import Excel",
-      br(),fileInput("excel","Wybierz plik XLSX lub CSV",accept=c(".xlsx",".xls",".csv")),
-      p(class="small-note","Wymagane: age, gender. Pozostałe kolumny muszą używać nazw z pakietu capl. Opcjonalnie: gotowe wyniki domen oraz step_average."),
-      actionButton("calculate_group","Oblicz grupę",class="btn-primary"),
-      downloadButton("template","Pobierz oficjalny szablon danych"),
-      hr(),verbatimTextOutput("import_status"),
-      DTOutput("group_table"),downloadButton("save_group","Pobierz wyniki XLSX"),
-      hr(),selectInput("plot_metric","Obszar wykresu",choices=setNames(names(metric_labels),metric_labels),selected="capl_score"),
-      plotOutput("group_plot",height="400px")
-    ),
-    tabPanel("Pełne wyniki CAPL-2",
-      br(),
-      p("Wszystkie kolumny zwrócone przez oryginalną funkcję capl::get_capl(), razem z danymi źródłowymi i dodatkowymi interpretacjami PAPL. Brakujące wyniki pozostają puste."),
-      radioButtons("detail_source","Zestaw danych",choices=c("Pojedyncze dziecko"="one","Import Excel"="group"),inline=TRUE),
-      radioButtons("detail_columns","Pokaż kolumny",choices=c("Wszystkie"="all","Wyniki obliczone i interpretacje"="derived","Dane wejściowe"="raw"),inline=TRUE),
-      verbatimTextOutput("detail_counts"),
-      DTOutput("detail_table"),
-      downloadButton("download_full","Pobierz pełne wyniki XLSX"),
-      hr(),
-      h4("Słownik zmiennych"),
-      p("Nazwy są zachowane z oryginalnego pakietu R. Klasyfikacje polskie mają prefiks PAPL_, a wywołane dodatkowo kanadyjskie – CAPL_."),
-      DTOutput("dictionary_table")
-    ),
-    tabPanel("Wizualizacje",
-      br(),
-      p("Oryginalny wykres kategorii capl::get_capl_bar_plot() dla danych grupowych i dodatkowe zestawienia wyników domen."),
-      radioButtons("viz_source","Dane",choices=c("Pojedyncze dziecko"="one","Import Excel"="group"),inline=TRUE),
-      selectInput("viz_metric","Wynik lub test",choices=setNames(names(metric_labels),metric_labels),selected="capl_score"),
-      h4("Rozkład wyników"),
-      plotOutput("viz_distribution",height="360px"),
-      h4("Oryginalny wykres CAPL-2"),
-      plotOutput("viz_capl",height="360px"),
-      h4("Domeny – procent maksymalnej punktacji"),
-      plotOutput("viz_domains",height="360px")
-    ),
-    tabPanel("Normy PAPL",
-      br(),p("Zakresy referencyjne według płci i wieku, z raportu WF z AWF (tabele 56–62)."),
-      selectInput("norm_metric","Wybierz obszar",choices=setNames(names(metric_labels),metric_labels)),
-      DTOutput("norm_table"),
-      p(class="small-note","Granice z raportu: pierwsza kategoria poniżej progu początkowego, druga do granicy progresji, trzecia do granicy kategorii sprawny, czwarta powyżej. Wyniki zaokrąglane do precyzji tabel.")
-    ),
-    tabPanel("Informacje",h3("Metodyka i prywatność"),
-      p("CAPL-2: punktacja obliczana przez pakiet capl; kanadyjska klasyfikacja przez get_capl_interpretation()."),
-      p("PAPL: progi z raportu „Aktywny dzisiaj dla zdrowia w przyszłości”, strony 130–134; bez przeliczania na nowe percentyle."),
-      p("Moduł nie zastępuje oceny jakości danych i walidacji procedury adaptacyjnej."),
-      p("W publicznym wdrożeniu dane przesłane do Shiny są przetwarzane na serwerze aplikacji. Nie przesyłaj danych identyfikujących dzieci."),
-      tags$a(href="https://github.com/wieslawfirek/kalkulatorCAPL-PAPL", "Kod źródłowy na GitHubie",target="_blank")
     )
+  ),
+  tabPanel("2. Wyniki CAPL-2",br(),
+    p("Pełny wynik oryginalnej funkcji get_capl(): wszystkie kolumny wejściowe i wyliczone. Dodatkowe kolumny PAPL mają prefiks PAPL_."),
+    radioButtons("columns","Zakres kolumn",inline=TRUE,
+      choices=c("Wszystkie"="all","40 wyników pakietu"="derived",
+                "Dane surowe"="raw","Polskie interpretacje"="papl")),
+    DTOutput("results"),br(),
+    downloadButton("export","Pobierz pełną bazę wynikową XLSX"),
+    downloadButton("export_csv","Pobierz CSV")
+  ),
+  tabPanel("3. Jakość danych",br(),
+    h4("Kompletność wyników i status domen"),
+    DTOutput("quality_status"),
+    h4("Kompletność oryginalnych 40 wyników"),
+    DTOutput("quality_variables")
+  ),
+  tabPanel("4. Wizualizacje CAPL-2",br(),
+    p("Wykres kategorii generowany funkcją get_capl_bar_plot() z oryginalnego pakietu."),
+    selectInput("metric","Wskaźnik",choices=metrics),
+    plotOutput("original_plot",height="410px"),
+    h4("Dodatkowo: rozkład wyniku"),
+    plotOutput("hist",height="320px")
+  ),
+  tabPanel("5. Normy PAPL – dodatek",br(),
+    p("Opcjonalne klasyfikacje na podstawie polskich tabel normatywnych. Oryginalne wyniki i interpretacje kanadyjskie pozostają niezmienione."),
+    selectInput("norm_metric","Wybierz wynik",choices=setNames(unique(norms$metric),unique(norms$metric))),
+    DTOutput("norm_table"),
+    p("Nie wszystkie zmienne PAPL mają odpowiednik bezpośrednio dostępny w przeliczonym CAPL-2. Nie przypisujemy kategorii przy braku porównywalnego wyniku.")
+  ),
+  tabPanel("Metodyka",br(),
+    h4("Zakres narzędzia"),
+    p("Pakiet capl: 60 pól wejściowych → 40 dodatkowych wyników, statusów i interpretacji. Silnik: capl::get_capl()."),
+    p("Oryginalne 40 pól jest zachowanych wraz z pierwotnymi nazwami; CAPL-2 jest źródłem obliczeń i kanadyjskich norm."),
+    p("PAPL to oddzielna warstwa interpretacyjna; nie zmienia punktowania oryginalnego pakietu."),
+    p("Braki w danych i dzielenie przez dostępne komponenty podlegają regułom autorów capl."),
+    p("Publiczny serwer Shiny przetwarza przesłane dane na serwerze – nie wysyłaj danych pozwalających zidentyfikować dzieci."),
+    tags$a(href="https://github.com/wieslawfirek/kalkulatorCAPL-PAPL",
+       "Kod źródłowy i testy na GitHubie",target="_blank"),
+    p("Barnes, J. D., & Guerrero, M. D. (2021). PLOS ONE, 16(2), e0243841.")
   )
+ )
 )
 
-server <- function(input, output, session) {
-  individual <- eventReactive(input$calculate_one, {
-    raw <- one_row(input)
-    supplied <- lapply(c("pc_score","db_score","mc_score","ku_score"),function(k) value_or_na(input[[k]]))
-    names(supplied) <- c("pc_score","db_score","mc_score","ku_score")
-    tryCatch(process_data(raw,supplied),error=function(e) {
-      showNotification(conditionMessage(e),type="error",duration=12);NULL
-    })
-  })
-  group <- eventReactive(input$calculate_group,{
-    req(input$excel)
-    tryCatch({
-      dat <- if (grepl("\\.csv$",input$excel$name,ignore.case=TRUE))
-        read.csv(input$excel$datapath,stringsAsFactors=FALSE) else
-        as.data.frame(readxl::read_excel(input$excel$datapath))
-      # Explicitly supplied precomputed domain scores are not overwritten by missing raw data.
-      supplied_keys <- intersect(c("pc_score","db_score","mc_score","ku_score","capl_score"),names(dat))
-      computed <- process_data(dat)
-      for(k in supplied_keys){
-        value <- suppressWarnings(as.numeric(dat[[k]]))
-        computed[[k]] <- ifelse(is.na(value),computed[[k]],value)
-      }
-      # Recalculate overall score if domain values were explicitly overridden.
-      if (length(intersect(c("pc_score","db_score","mc_score","ku_score"),supplied_keys))>0) {
-        computed$capl_score <- capl::get_capl_score(computed$pc_score,computed$db_score,
-          computed$mc_score,computed$ku_score)
-      }
-      # Recompute both types of classifications from the final scores.
-      for(k in metric_names){
-        computed[[paste0("PAPL_",k)]] <- vapply(seq_len(nrow(computed)),function(i)
-          papl_class(computed$age[i],computed$gender[i],get_metric(computed[i,,drop=FALSE],k),k),character(1))
-        computed[[paste0("CAPL_",k)]] <- tryCatch(
-          as.character(capl::get_capl_interpretation(computed$age,computed$gender,
-            as.numeric(computed[[k]]),protocol_map[[k]])),
-          error=function(e) rep(NA_character_,nrow(computed)))
-      }
-      computed
-    },error=function(e) {showNotification(conditionMessage(e),type="error",duration=12);NULL})
-  })
-  display_cols <- function(d) {
-    needed <- c("age","gender",metric_names,unlist(lapply(metric_names,function(k)c(paste0("PAPL_",k),paste0("CAPL_",k)))))
-    d[,intersect(needed,names(d)),drop=FALSE]
-  }
-  # Keep all source and derived columns; no results are silently removed from this view.
-  detail_data <- reactive({
-    if (identical(input$detail_source,"group")) group() else individual()
-  })
-  original_input_names <- names(capl::get_capl_demo_data(n=1))
-  select_columns <- function(d, mode="all") {
-    if (identical(mode,"all")) return(d)
-    columns <- if (identical(mode,"raw")) intersect(names(d),original_input_names)
-      else setdiff(names(d),original_input_names)
-    d[,columns,drop=FALSE]
-  }
-  output$detail_counts <- renderText({
-    d <- detail_data();req(d)
-    sprintf("Uczestnicy: %d | Wszystkie kolumny: %d | Wejściowe: %d | Dodatkowe: %d",
-      nrow(d),ncol(d),sum(names(d) %in% original_input_names),
-      sum(!names(d) %in% original_input_names))
-  })
-  output$detail_table <- renderDT({
-    d <- detail_data();req(d)
-    DT::datatable(select_columns(d,input$detail_columns),filter="top",
-      extensions="Buttons",options=list(scrollX=TRUE,scrollY="480px",
-        pageLength=10,dom="Bfrtip",buttons=c("copy","csv","excel")))
-  })
-  output$dictionary_table <- renderDT({
-    d <- detail_data();req(d)
-    nm <- names(d)
-    category <- ifelse(grepl("^PAPL_",nm),"Polska interpretacja",
-      ifelse(grepl("^CAPL_",nm),"Dodatkowa interpretacja kanadyjska",
-        ifelse(nm %in% original_input_names,"Dane źródłowe CAPL-2","Wynik pakietu capl")))
-    DT::datatable(data.frame(zmienna=nm,rodzaj=category),options=list(pageLength=15))
-  })
-  output$download_full <- downloadHandler(
-    filename=function() paste0("PAPL_pelne_wyniki_",Sys.Date(),".xlsx"),
-    content=function(file) {
-      d <- detail_data();req(d)
-      writexl::write_xlsx(list("Wszystkie dane i wyniki"=d,
-        "Słownik zmiennych"=data.frame(zmienna=names(d),
-          rodzaj=ifelse(names(d) %in% original_input_names,"Wejściowa","Wynik / interpretacja"))),file)
-    })
-  viz_data <- reactive({
-    if (identical(input$viz_source,"group")) group() else individual()
-  })
-  output$viz_distribution <- renderPlot({
-    d<-viz_data();req(d); k<-input$viz_metric
-    v<-suppressWarnings(as.numeric(d[[k]]));v<-v[is.finite(v)]
-    validate(need(length(v)>0,"Brak liczbowych wyników dla wybranego obszaru."))
-    if(length(v)<2) {
-      ggplot2::ggplot(data.frame(x=v),ggplot2::aes(x=x))+
-        ggplot2::geom_point(y=1,size=4)+ggplot2::labs(x=metric_labels[[k]],y=NULL)+ggplot2::theme_minimal()
-    } else {
-      ggplot2::ggplot(data.frame(x=v),ggplot2::aes(x=x))+
-        ggplot2::geom_histogram(bins=min(20,max(3,ceiling(sqrt(length(v))))),fill="#2879aa")+
-        ggplot2::labs(x=metric_labels[[k]],y="Liczba uczestników")+ggplot2::theme_minimal()
-    }
-  })
-  output$viz_capl <- renderPlot({
-    d<-viz_data();req(d); k<-input$viz_metric
-    score<-suppressWarnings(as.numeric(d[[k]]))
-    klass<-as.character(d[[paste0("CAPL_",k)]])
-    ok<-is.finite(score)&!is.na(klass)&nzchar(klass)
-    validate(need(sum(ok)>0,"Brak pełnych danych do wykresu kategorii CAPL-2."))
-    capl::get_capl_bar_plot(score=score[ok],interpretation=klass[ok],
-      x_label="Kategorie CAPL-2",y_label=metric_labels[[k]])
-  })
-  output$viz_domains <- renderPlot({
-    d<-viz_data();req(d)
-    keys<-c("pc_score","db_score","mc_score","ku_score")
-    maximum<-c(30,30,30,10)
-    labels<-c("Kompetencje fizyczne","Zachowania codzienne",
-              "Motywacja i pewność siebie","Wiedza i zrozumienie")
-    v<-vapply(keys,function(k) mean(as.numeric(d[[k]]),na.rm=TRUE),numeric(1))
-    v[!is.finite(v)]<-NA_real_
-    validate(need(any(is.finite(v)),"Brak wyników domenowych."))
-    df<-data.frame(domena=labels,procent=100*v/maximum,
-      wynik=paste0(round(v,1)," / ",maximum))
-    ggplot2::ggplot(df,ggplot2::aes(x=reorder(domena,procent),y=procent))+
-      ggplot2::geom_col(fill="#2879aa",na.rm=TRUE)+ggplot2::coord_flip()+
-      ggplot2::geom_text(ggplot2::aes(label=wynik),hjust=-0.12,na.rm=TRUE)+
-      ggplot2::scale_y_continuous(limits=c(0,110),breaks=seq(0,100,20))+
-      ggplot2::labs(x=NULL,y="Procent maksymalnej punktacji",title="Domeny CAPL-2")+
-      ggplot2::theme_minimal()
-  })
-  output$individual_summary <- renderUI({
-    d <- individual()
-    req(d)
-    value <- d$capl_score[1]
-    papl <- d$PAPL_capl_score[1]
-    canada <- d$CAPL_capl_score[1]
-    box <- function(label, value) div(style="display:inline-block;vertical-align:top;min-width:160px;margin:5px;padding:14px;border-radius:10px;background:#e8f1f8;",
-      tags$small(label), tags$h3(style="margin:5px 0;",ifelse(is.na(value),"Brak danych",as.character(value))))
-    div(
-      box("Wynik ogólny / 100", if(is.na(value)) NA_character_ else format(round(value,1),decimal.mark=",",nsmall=1)),
-      box("Normy PAPL", papl),
-      box("Normy CAPL-2", canada)
-    )
-  })
-  output$individual_table <- renderDT({req(individual());datatable(display_cols(individual()),options=list(scrollX=TRUE,pageLength=5))})
-  output$group_table <- renderDT({req(group());datatable(display_cols(group()),options=list(scrollX=TRUE,pageLength=10))})
-  output$import_status <- renderText({
-    d <- group()
-    if (is.null(d)) return("Załaduj dane i wybierz „Oblicz grupę”.")
-    paste("Wczytano",nrow(d),"wierszy. Brak wyniku ogólnego:",sum(is.na(d$capl_score)))
-  })
-  output$norm_table <- renderDT({
-    d <- norms[norms$metric==input$norm_metric,c("sex","age","begin_max","progress_max","achieve_max")]
-    colnames(d) <- c("Płeć","Wiek","Początkujący: próg następnej kat.","Dokonujący postępów: max","Sprawny: max")
-    datatable(d,options=list(dom="t",paging=FALSE))
-  })
-  output$group_plot <- renderPlot({
-    d<-group();req(d)
-    k<-input$plot_metric;sc<-as.numeric(d[[k]]);inter<-as.character(d[[paste0("CAPL_",k)]])
-    ok<-!is.na(sc)&!is.na(inter)
-    validate(need(sum(ok)>0,"Brak wyników do wykresu według norm kanadyjskich."))
-    capl::get_capl_bar_plot(score=sc[ok], interpretation=inter[ok],
-      x_label="Kategorie CAPL-2", y_label=metric_labels[[k]])
-  })
-  output$individual_plot <- renderPlot({
-    d<-individual();req(d)
-    keys <- c("pc_score","db_score","mc_score","ku_score")
-    score <- vapply(keys,function(k) as.numeric(d[[k]][1]),numeric(1))
-    validate(need(any(!is.na(score)),"Brak wyników domenowych do wykresu."))
-    plot_data <- data.frame(domain=factor(c("Kompetencje fizyczne",
-      "Zachowania codzienne","Motywacja i pewność siebie","Wiedza i zrozumienie"),
-      levels=c("Kompetencje fizyczne","Zachowania codzienne",
-               "Motywacja i pewność siebie","Wiedza i zrozumienie")),
-      value=unname(score))
-    ggplot(plot_data,aes(x=domain,y=value)) +
-      geom_col(fill="#2879aa",na.rm=TRUE) +
-      coord_flip() + labs(x=NULL,y="Wynik punktowy",title="Wyniki domenowe") +
-      theme_minimal()
-  })
-  output$template <- downloadHandler(filename=function() "CAPL2_szablon.xlsx",
-    content=function(file){
-      dat <- capl::get_capl_demo_data(1)
-      dat[1,] <- NA
-      writexl::write_xlsx(dat,file)
-    })
-  output$save_group <- downloadHandler(filename=function() "PAPL_wyniki_grupa.xlsx",
-    content=function(file){req(group());writexl::write_xlsx(group(),file)})
-  output$save_individual <- downloadHandler(filename=function() "PAPL_wynik_dziecka.xlsx",
-    content=function(file){req(individual());writexl::write_xlsx(individual(),file)})
+server <- function(input,output,session) {
+ raw <- eventReactive(input$calculate,{
+   req(input$file)
+   tryCatch({
+     d <- if(grepl("\\.csv$",input$file$name,ignore.case=TRUE))
+       read.csv(input$file$datapath,stringsAsFactors=FALSE,check.names=FALSE)
+       else as.data.frame(readxl::read_excel(input$file$datapath))
+     d
+   },error=function(e){showNotification(conditionMessage(e),type="error");NULL})
+ })
+ results <- reactive({
+   d<-raw();req(d)
+   tryCatch(run_capl(d,isTRUE(isolate(input$apply_papl))),
+     error=function(e){showNotification(conditionMessage(e),type="error",duration=12);NULL})
+ })
+ output$status <- renderText({
+   d<-results();req(d)
+   x<-sum(!is.na(d$capl_score))
+   paste0("Przeliczono ",nrow(d)," uczestników.\n",
+     "Wynik ogólny dostępny: ",x," / ",nrow(d),".\n",
+     "Wyniki oryginalne: ",sum(capl_derived %in% names(d))," / 40 kolumn.\n",
+     "Kolumny w tabeli wynikowej: ",ncol(d),".")
+ })
+ output$quality <- renderTable({
+   d<-raw();req(d)
+   data.frame(Pole=c("Liczba uczestników","Kolumny wejściowe","Wymagane kolumny CAPL-2",
+       "Brakujące kolumny protokołu","Uczestnicy bez wieku","Uczestnicy bez płci"),
+     Wartość=c(nrow(d),ncol(d),length(original_fields),
+       paste(setdiff(original_fields,names(d)),collapse=", "),
+       if("age" %in% names(d)) sum(is.na(d$age)) else nrow(d),
+       if("gender" %in% names(d)) sum(is.na(d$gender)) else nrow(d)))
+ })
+ selected_data <- reactive({
+   d<-results();req(d)
+   keys<-switch(input$columns,
+      derived=intersect(capl_derived,names(d)),
+      raw=intersect(original_fields,names(d)),
+      papl=grep("^PAPL_",names(d),value=TRUE),
+      names(d))
+   d[,keys,drop=FALSE]
+ })
+ output$results <- renderDT({
+   d<-selected_data();req(d)
+   DT::datatable(d,filter="top",options=list(scrollX=TRUE,pageLength=12,
+     deferRender=TRUE))
+ })
+ output$quality_status <- renderDT({
+   d<-results();req(d)
+   ks<-intersect(c("pc_status","db_status","mc_status","ku_status","capl_status"),names(d))
+   out<-do.call(rbind,lapply(ks,function(k) {
+     tab<-table(ifelse(is.na(d[[k]]),"NA",as.character(d[[k]])))
+     data.frame(domena=k,status=names(tab),liczba=as.integer(tab))
+   }))
+   DT::datatable(out,options=list(pageLength=20))
+ })
+ output$quality_variables <- renderDT({
+   d<-results();req(d)
+   ks<-intersect(capl_derived,names(d))
+   DT::datatable(data.frame(zmienna=ks,
+      wyniki_dostępne=vapply(d[ks],function(x)sum(!is.na(x)),integer(1)),
+      braki=vapply(d[ks],function(x)sum(is.na(x)),integer(1))),
+      options=list(pageLength=40,dom="tip"))
+ })
+ output$original_plot <- renderPlot({
+   d<-results();req(d)
+   k<-input$metric
+   i<-sub("_score$","_interpretation",k)
+   if(k=="capl_score") i<-"capl_interpretation"
+   validate(need(i %in% names(d),"Brak kategorii interpretacyjnej."))
+   ok<-!is.na(d[[k]]) & !is.na(d[[i]])
+   validate(need(sum(ok)>0,"Brak kompletnych wartości do wykresu."))
+   capl::get_capl_bar_plot(score=d[[k]][ok],
+     interpretation=d[[i]][ok],
+     x_label="Kategorie CAPL-2",y_label=k)
+ })
+ output$hist <- renderPlot({
+   d<-results();req(d)
+   v<-suppressWarnings(as.numeric(d[[input$metric]]))
+   v<-v[is.finite(v)]
+   validate(need(length(v)>0,"Brak wyników do wykresu."))
+   if(length(v)==1) {
+     ggplot(data.frame(x=v),aes(x=x))+geom_point(y=1,size=4)+
+       labs(x=input$metric,y=NULL)+theme_minimal()
+   } else {
+     ggplot(data.frame(x=v),aes(x=x))+
+       geom_histogram(bins=min(30,max(3,ceiling(sqrt(length(v))))),fill="#317da8")+
+       labs(x=input$metric,y="Liczba dzieci")+theme_minimal()
+   }
+ })
+ output$norm_table <- renderDT({
+   d<-norms[norms$metric==input$norm_metric,,drop=FALSE]
+   DT::datatable(d,options=list(pageLength=12))
+ })
+ output$template <- downloadHandler(filename=function()"CAPL2_60_kolumn_szablon.xlsx",
+   content=function(file){
+     d<-capl::get_capl_demo_data(n=1)[FALSE,,drop=FALSE]
+     writexl::write_xlsx(d,file)
+   })
+ output$demo <- downloadHandler(filename=function()"CAPL2_przykladowe_syntetyczne.xlsx",
+   content=function(file){
+     d<-capl::get_capl_demo_data(n=20)
+     writexl::write_xlsx(d,file)
+   })
+ output$export <- downloadHandler(filename=function()paste0("CAPL2_wyniki_",Sys.Date(),".xlsx"),
+   content=function(file){
+     d<-results();req(d)
+     q<-data.frame(zmienna=names(d),rodzaj=ifelse(names(d)%in%original_fields,
+       "Dane wejściowe",ifelse(grepl("^PAPL_",names(d)),"PAPL – dodatek","CAPL-2 – wynik")))
+     writexl::write_xlsx(list("Wyniki"=d,"Słownik kolumn"=q),file)
+   })
+ output$export_csv <- downloadHandler(filename=function()"CAPL2_wyniki.csv",
+   content=function(file){d<-results();req(d);write.csv(d,file,row.names=FALSE,na="")})
 }
 shinyApp(ui,server)
