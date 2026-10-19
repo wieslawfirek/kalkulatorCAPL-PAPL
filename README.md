@@ -14,7 +14,10 @@ Nie jest to kalkulator dla pojedynczego dziecka. Zasadniczym zadaniem aplikacji 
 - Oryginalne punktowanie, kategorie kanadyjskie, statusy kompletności i reguły braków pakietu `capl`.
 - Pełny podgląd 40 wyliczonych zmiennych oraz 60 wejściowych.
 - Kontrola kompletności wyników i brakujących pól.
-- Oryginalny wykres `get_capl_bar_plot()` i dodatkowy histogram.
+- Dziewięć wybranych wykresów: histogram, boxplot, profil czterech domen, struktura kategorii ogółem / według płci / według wieku, oryginalny wykres `get_capl_bar_plot()`, mapa braków oraz statusy kompletności domen.
+- Szablon XLSX zawierający arkusz 60 zmiennych wejściowych i książkę kodów. Kodowanie pozycji kwestionariuszowych wymaga sprawdzenia w oryginalnym podręczniku CAPL-2.
+- Zbiorczy raport XLSX: pełne wyniki, książka kodów i tabele analityczne, z których powstają wizualizacje.
+- Możliwość pobrania wykresu PNG.
 - Eksport wszystkich kolumn do XLSX/CSV.
 - Opcjonalne normy polskie PAPL jako **osobna warstwa interpretacyjna** (`PAPL_...`), bez zmiany kanadyjskiego punktowania.
 
