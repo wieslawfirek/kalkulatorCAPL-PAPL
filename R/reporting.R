@@ -100,6 +100,18 @@ score_interpretation <- function(key) {
   if(key=="step_score")return("step_interpretation")
   sub("_score$","_interpretation",key)
 }
+numeric_summary <- function(x) {
+  x<-suppressWarnings(as.numeric(x))
+  ok<-x[is.finite(x)]
+  c(N=sum(is.finite(x)),Braki=sum(!is.finite(x)),
+    Srednia=if(length(ok)) mean(ok) else NA_real_,
+    SD=if(length(ok)>1) sd(ok) else NA_real_,
+    Mediana=if(length(ok)) median(ok) else NA_real_,
+    Q1=if(length(ok)) unname(quantile(ok,.25)) else NA_real_,
+    Q3=if(length(ok)) unname(quantile(ok,.75)) else NA_real_,
+    Minimum=if(length(ok)) min(ok) else NA_real_,
+    Maksimum=if(length(ok)) max(ok) else NA_real_)
+}
 research_tables <- function(d, score="capl_score") {
   if(!score %in% names(d))score<-"capl_score"
   category <- score_interpretation(score)
@@ -137,7 +149,15 @@ research_tables <- function(d, score="capl_score") {
   miss <- data.frame(Zmienna=names(d),
     N_brak=vapply(d,function(x)sum(is.na(x)),integer(1)))
   miss$Procent_brak<-round(100*miss$N_brak/nrow(d),1)
-  list("Profil domen"=dom,"Kategorie"=counts("Kategoria"),
+  overall <- data.frame(Wskaznik=score,t(numeric_summary(base$Wynik)),check.names=FALSE)
+  by_group <- do.call(rbind,lapply(split(seq_len(nrow(base)),
+    interaction(base$Wiek,base$Plec,drop=TRUE,lex.order=TRUE)),function(ix){
+    data.frame(Wiek=base$Wiek[ix[1]],Plec=base$Plec[ix[1]],
+      Wskaznik=score,t(numeric_summary(base$Wynik[ix])),
+      check.names=FALSE)
+  }))
+  list("Opis ogolem"=overall,"Opis wiek plec"=by_group,
+     "Profil domen"=dom,"Kategorie"=counts("Kategoria"),
     "Kategorie wg plci"=counts(c("Plec","Kategoria")),
     "Kategorie wg wieku"=counts(c("Wiek","Kategoria")),
     "Status domen"=st,"Braki"=miss)
