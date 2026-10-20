@@ -182,8 +182,8 @@ server <- function(input,output,session) {
    paste0("Przeliczono ",nrow(d)," uczestników.\n",
      "Wynik ogólny dostępny: ",x," / ",nrow(d),".\n",
      "Wyniki oryginalne: ",sum(capl_derived %in% names(d))," / 40 kolumn.\n",
-     "Kolumny w tabeli wynikowej: ",ncol(d),".\\n",
-     "Wyniki ogólne o statusie complete: ",sum(!is.na(d$capl_status) & d$capl_status=="complete")," / ",nrow(d),".\\n",
+     "Kolumny w tabeli wynikowej: ",ncol(d),".\n",
+     "Wyniki ogólne o statusie complete: ",sum(!is.na(d$capl_status) & d$capl_status=="complete")," / ",nrow(d),".\n",
      "Uwaga: pakiet capl może obliczać wyniki także przy niekompletnych pomiarach. Sprawdź statusy domen i arkusz Kompletnosc osob.")
  })
  output$quality <- renderTable({
