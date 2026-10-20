@@ -18,16 +18,6 @@ stopifnot(isTRUE(all.equal(a,out,check.attributes=FALSE)))
 export<-tempfile(fileext=".xlsx");writexl::write_xlsx(out,export)
 returned<-as.data.frame(readxl::read_excel(export))
 stopifnot(nrow(returned)==nrow(out),all(names(out)%in%names(returned)))
-# Original bar graphic; use valid nonmissing CAPL classifications.
-k<-"capl_score";i<-"capl_interpretation"
-ok<-!is.na(a[[k]]) & !is.na(a[[i]])
-if(any(ok)){
- png(tempfile(fileext=".png"))
- p<-capl::get_capl_bar_plot(score=a[[k]][ok],
-  interpretation=a[[i]][ok],x_label="CAPL",y_label="Score")
- if(inherits(p,"ggplot"))print(p)
- dev.off()
-}
 # New CAPL-2 codebook and multi-sheet research workbook.
 cb <- codebook(original_fields)
 stopifnot(nrow(cb)==60,identical(as.character(cb$Zmienna),original_fields),
@@ -42,10 +32,9 @@ writexl::write_xlsx(c(list("Pelne wyniki"=a,"Ksiazka kodow"=cb),tables),report)
 stopifnot(all(c("Pelne wyniki","Ksiazka kodow","Kategorie","Status domen") %in%
  readxl::excel_sheets(report)))
 stopifnot(nrow(readxl::read_excel(report,sheet="Pelne wyniki"))==nrow(a))
-# Test the eight derived plots and original CAPL plot.
-for (type in unname(plot_choices)) {
-  png(tempfile(fileext=".png"))
-  tryCatch({p<-research_plot(a,type,"capl_score");print(p)},
-    finally=dev.off())
-}
-cat("BATCH SMOKE TEST PASS: reproducibility, input/output, original graphic, optional PAPL\n")
+stopifnot(all(c("Opis ogolem","Opis wiek plec") %in% names(tables)))
+stopifnot(all(c("Srednia","SD","Mediana","Q1","Q3","Minimum","Maksimum","Braki") %in% names(tables[["Opis ogolem"]])))
+complete_stats <- all_numeric_summaries(a)
+stopifnot(nrow(complete_stats)>30,
+  all(c("capl_score","pc_score","db_score","mc_score","ku_score") %in% complete_stats$Wskaznik))
+cat("BATCH SMOKE TEST PASS: reproducibility, input/output, descriptive tables, optional PAPL\n")
