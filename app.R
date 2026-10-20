@@ -234,7 +234,8 @@ server <- function(input,output,session) {
    content=function(file) {
      d<-results();req(d)
      sheets<-c(list("Pelne wyniki"=d,
-       "Ksiazka kodow"=codebook(original_fields)),research_tables(d,input$summary_metric))
+       "Ksiazka kodow"=codebook(original_fields),
+       "Statystyki wszystkich"=all_numeric_summaries(d)),research_tables(d,input$summary_metric))
      writexl::write_xlsx(sheets,file)
    })
  output$norm_table <- renderDT({
@@ -258,7 +259,8 @@ server <- function(input,output,session) {
      q<-data.frame(zmienna=names(d),rodzaj=ifelse(names(d)%in%original_fields,
        "Dane wejściowe",ifelse(grepl("^PAPL_",names(d)),"PAPL – dodatek","CAPL-2 – wynik")))
      writexl::write_xlsx(c(list("Wyniki"=d,"Słownik kolumn"=q,
-       "Ksiazka kodow"=codebook(original_fields)),research_tables(d,"capl_score")),file)
+       "Ksiazka kodow"=codebook(original_fields),
+       "Statystyki wszystkich"=all_numeric_summaries(d)),research_tables(d,"capl_score")),file)
    })
  output$export_csv <- downloadHandler(filename=function()"CAPL2_wyniki.csv",
    content=function(file){d<-results();req(d);write.csv(d,file,row.names=FALSE,na="")})
