@@ -158,14 +158,48 @@ research_tables <- function(d, score="capl_score") {
     "Status domen"=st,"Braki"=miss)
 }
 
-# Statistical tables across all available numerical CAPL-2 outputs;
-# original scores and interpretations remain available in the raw results sheet.
+# Descriptive statistics are restricted to substantive score/outcome variables.
+# Numeric codes, demographic values and protocol parameters must NOT be averaged.
 all_numeric_summaries <- function(d) {
-  keys <- names(d)[vapply(d,is.numeric,logical(1))]
-  keys <- keys[!(keys %in% c("age")) & !grepl("^steps[1-7]$|^non_wear_time[1-7]$",keys)]
-  all <- do.call(rbind,lapply(keys,function(key) {
-    data.frame(Wskaznik=key,t(numeric_summary(d[[key]])),check.names=FALSE)
-  }))
+  outcomes <- c(
+    "pacer_laps_20m","pacer_score","plank_time","plank_score",
+    "camsa_time_score1","camsa_time_score2","camsa_skill_time_score1",
+    "camsa_skill_time_score2","camsa_score","pc_score",
+    "step_average","step_score","self_report_pa_score","db_score",
+    "predilection_score","adequacy_score","intrinsic_motivation_score",
+    "pa_competence_score","mc_score","pa_guideline_score",
+    "crf_means_score","ms_means_score","sports_skill_score",
+    "fill_in_the_blanks_score","ku_score","capl_score")
+  keys <- intersect(outcomes,names(d))
+  all <- do.call(rbind,lapply(keys,function(key)
+    data.frame(Wskaznik=key,t(numeric_summary(d[[key]])),check.names=FALSE)))
   rownames(all)<-NULL
   all
+}
+input_frequencies <- function(d) {
+  keys <- intersect(c("pacer_lap_distance","gender","age"),names(d))
+  out <- do.call(rbind,lapply(keys,function(key){
+    value <- as.character(d[[key]])
+    value[is.na(value)|!nzchar(trimws(value))] <- "Brak danych"
+    z <- as.data.frame(table(value),stringsAsFactors=FALSE)
+    data.frame(Zmienna=key,Wartosc=as.character(z$value),
+      N=as.integer(z$Freq),Procent=round(100*as.integer(z$Freq)/nrow(d),1))
+  }))
+  rownames(out)<-NULL
+  out
+}
+participant_completeness <- function(d,source_fields) {
+  raw_fields <- intersect(source_fields,names(d))
+  raw_missing <- if(length(raw_fields)) rowSums(is.na(d[raw_fields])) else rep(NA_integer_,nrow(d))
+  statuses <- intersect(c("pc_status","db_status","mc_status","ku_status","capl_status"),names(d))
+  out <- data.frame(Wiersz=seq_len(nrow(d)),
+    Braki_w_przeslanych_polach=raw_missing,
+    Liczba_przeslanych_pol=length(raw_fields),
+    Brakujace_kolumny_protokolu=length(setdiff(source_fields,names(d))),
+    Wynik_ogolny_dostepny=!is.na(d$capl_score),
+    stringsAsFactors=FALSE)
+  for(k in statuses)out[[k]]<-as.character(d[[k]])
+  # A non-complete status is not synonymous with an imputed score:
+  # preserve the package's own detailed status wording.
+  out
 }
