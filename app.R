@@ -126,16 +126,20 @@ ui <- fluidPage(
     h4("Kompletność oryginalnych 40 wyników"),
     DTOutput("quality_variables")
   ),
-  tabPanel("4. Wizualizacje CAPL-2",br(),
-    p("Dziewięć wybranych wizualizacji. Wykres nr 8 pochodzi bezpośrednio z pakietu capl; pozostałe są dodatkiem analitycznym."),
-    selectInput("plot_type","Rodzaj wykresu",choices=plot_choices),
-    selectInput("metric","Wskaźnik CAPL-2",choices=metrics),
-    plotOutput("selected_plot",height="520px"),
-    downloadButton("download_plot","Eksport wykresu PNG"),
-    p("Wykres kategorii pokazuje średni wynik punktowy, a nie liczebności. Struktury kategorii prezentowane są oddzielnie."),
-    h4("Dane liczbowe wykorzystane do wykresów"),
-    DTOutput("plot_tables"),
-    downloadButton("export_analysis","Eksport wyników i tabel do Excela")
+  tabPanel("4. Zestawienia liczbowe",br(),
+    p("Tabele statystyczne do samodzielnej analizy i wizualizacji. Bez wykresów."),
+    selectInput("summary_metric","Wskaźnik CAPL-2",choices=metrics),
+    selectInput("summary_table","Zestawienie",choices=c(
+      "Statystyki opisowe ogółem"="Opis ogolem",
+      "Statystyki opisowe według wieku i płci"="Opis wiek plec",
+      "Profil czterech domen"="Profil domen",
+      "Kategorie CAPL-2"="Kategorie",
+      "Kategorie według płci"="Kategorie wg plci",
+      "Kategorie według wieku"="Kategorie wg wieku",
+      "Statusy kompletności"="Status domen",
+      "Braki danych"="Braki")),
+    DTOutput("summary_results"),br(),
+    downloadButton("export_analysis","Eksport pełnych wyników i zestawień do Excela")
   ),
   tabPanel("5. Normy PAPL – dodatek",br(),
     p("Opcjonalne klasyfikacje na podstawie polskich tabel normatywnych. Oryginalne wyniki i interpretacje kanadyjskie pozostają niezmienione."),
@@ -220,37 +224,17 @@ server <- function(input,output,session) {
       braki=vapply(d[ks],function(x)sum(is.na(x)),integer(1))),
       options=list(pageLength=40,dom="tip"))
  })
- output$selected_plot <- renderPlot({
+ output$summary_results <- renderDT({
    d<-results();req(d)
-   tryCatch(print(research_plot(d,input$plot_type,input$metric)),
-      error=function(e) validate(need(FALSE,conditionMessage(e))))
+   tabs<-research_tables(d,input$summary_metric)
+   DT::datatable(tabs[[input$summary_table]],options=list(scrollX=TRUE,pageLength=20))
  })
- plot_table <- reactive({
-   d<-results();req(d)
-   x<-research_tables(d,input$metric)
-   key<-switch(input$plot_type,
-     domains="Profil domen",categories="Kategorie",gender="Kategorie wg plci",
-     age="Kategorie wg wieku",status="Status domen",missing="Braki",
-     "Kategorie")
-   x[[key]]
- })
- output$plot_tables <- renderDT({
-   DT::datatable(plot_table(),options=list(scrollX=TRUE,pageLength=20))
- })
- output$download_plot <- downloadHandler(
-   filename=function()paste0("CAPL2_",input$plot_type,"_",Sys.Date(),".png"),
-   content=function(file) {
-     d<-results();req(d)
-     png(file,width=1600,height=950,res=145)
-     on.exit(dev.off(),add=TRUE)
-     print(research_plot(d,input$plot_type,input$metric))
-   })
  output$export_analysis <- downloadHandler(
    filename=function()paste0("CAPL2_raport_",Sys.Date(),".xlsx"),
    content=function(file) {
      d<-results();req(d)
      sheets<-c(list("Pelne wyniki"=d,
-       "Ksiazka kodow"=codebook(original_fields)),research_tables(d,input$metric))
+       "Ksiazka kodow"=codebook(original_fields)),research_tables(d,input$summary_metric))
      writexl::write_xlsx(sheets,file)
    })
  output$norm_table <- renderDT({
