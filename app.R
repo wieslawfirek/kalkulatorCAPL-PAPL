@@ -182,7 +182,9 @@ server <- function(input,output,session) {
    paste0("Przeliczono ",nrow(d)," uczestników.\n",
      "Wynik ogólny dostępny: ",x," / ",nrow(d),".\n",
      "Wyniki oryginalne: ",sum(capl_derived %in% names(d))," / 40 kolumn.\n",
-     "Kolumny w tabeli wynikowej: ",ncol(d),".")
+     "Kolumny w tabeli wynikowej: ",ncol(d),".\\n",
+     "Wyniki ogólne o statusie complete: ",sum(!is.na(d$capl_status) & d$capl_status=="complete")," / ",nrow(d),".\\n",
+     "Uwaga: pakiet capl może obliczać wyniki także przy niekompletnych pomiarach. Sprawdź statusy domen i arkusz Kompletnosc osob.")
  })
  output$quality <- renderTable({
    d<-raw();req(d)
@@ -235,7 +237,9 @@ server <- function(input,output,session) {
      d<-results();req(d)
      sheets<-c(list("Pelne wyniki"=d,
        "Ksiazka kodow"=codebook(original_fields),
-       "Statystyki wszystkich"=all_numeric_summaries(d)),research_tables(d,input$summary_metric))
+       "Statystyki wynikow"=all_numeric_summaries(d),
+       "Czestosci kodow"=input_frequencies(d),
+       "Kompletnosc osob"=participant_completeness(d,original_fields)),research_tables(d,input$summary_metric))
      writexl::write_xlsx(sheets,file)
    })
  output$norm_table <- renderDT({
@@ -260,7 +264,9 @@ server <- function(input,output,session) {
        "Dane wejściowe",ifelse(grepl("^PAPL_",names(d)),"PAPL – dodatek","CAPL-2 – wynik")))
      writexl::write_xlsx(c(list("Wyniki"=d,"Słownik kolumn"=q,
        "Ksiazka kodow"=codebook(original_fields),
-       "Statystyki wszystkich"=all_numeric_summaries(d)),research_tables(d,"capl_score")),file)
+       "Statystyki wynikow"=all_numeric_summaries(d),
+       "Czestosci kodow"=input_frequencies(d),
+       "Kompletnosc osob"=participant_completeness(d,original_fields)),research_tables(d,"capl_score")),file)
    })
  output$export_csv <- downloadHandler(filename=function()"CAPL2_wyniki.csv",
    content=function(file){d<-results();req(d);write.csv(d,file,row.names=FALSE,na="")})
