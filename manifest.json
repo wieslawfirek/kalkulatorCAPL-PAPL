@@ -2628,10 +2628,10 @@
       "checksum": "3f491553446f908508daabdd2f746429"
     },
     ".Rprofile": {
-      "checksum": "ed3fc4c0ae6af60db3f8cbd0e0707f50"
+      "checksum": "38030fa4415b48de524a3ff9140d5c46"
     },
     "app.R": {
-      "checksum": "617ce5c492760bd2eab25c85b7842070"
+      "checksum": "2cbaabc6478ab51ce6fa2ba4c1eab591"
     },
     "data/papl_norms.csv": {
       "checksum": "ae741b7c74c7af6b1026d6f6956b69a8"
@@ -2640,10 +2640,10 @@
       "checksum": "d083985c63fddaf51548a40ea4a8b4f3"
     },
     "R/reporting.R": {
-      "checksum": "1b46f54357bb3d1b4b6f79678873fc54"
+      "checksum": "7ea4d8a10bd70efac3cc03bd062673a6"
     },
     "README.md": {
-      "checksum": "ac94547ccf040ba033e15ec487b1f616"
+      "checksum": "8e07ba828a904bb2e08ac23ef342e90c"
     },
     "renv.lock": {
       "checksum": "f2926e38a6ed7c00f0cc79d067b7eb00"
@@ -2652,7 +2652,7 @@
       "checksum": "068d87e3a37b432e3cbd5b5551babf34"
     },
     "tests/smoke.R": {
-      "checksum": "477fa694c68ba22ec607012b384e23f4"
+      "checksum": "3700158b0509ee3c8abf226efcf57466"
     }
   },
   "users": null
