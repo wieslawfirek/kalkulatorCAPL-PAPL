@@ -89,11 +89,6 @@ codebook <- function(fields) {
   d
 }
 
-plot_choices <- c("1. Histogram"="hist","2. Boxplot według wieku i płci"="box",
- "4. Profil czterech domen"="domains","5. Udział kategorii CAPL-2"="categories",
- "6. Kategorie według płci"="gender","7. Kategorie według wieku"="age",
- "8. Średnie w kategoriach – oryginalny capl"="original",
- "16. Mapa braków danych"="missing","18. Statusy kompletności domen"="status")
 score_interpretation <- function(key) {
   if(key %in% c("capl_score","pc_score","db_score","mc_score","ku_score"))
     return(sub("_score$","_interpretation",key))
@@ -162,60 +157,15 @@ research_tables <- function(d, score="capl_score") {
     "Kategorie wg wieku"=counts(c("Wiek","Kategoria")),
     "Status domen"=st,"Braki"=miss)
 }
-research_plot <- function(d,what,score="capl_score") {
-  stopifnot(score %in% names(d))
-  t <- research_tables(d,score)
-  col <- "#317da8"
-  if(what=="original"){
-    k<-score_interpretation(score)
-    if(!k %in% names(d))stop("Wybrany wskaźnik nie ma kategorii CAPL-2.")
-    ok<-!is.na(d[[score]]) & !is.na(d[[k]])
-    if(!any(ok))stop("Brak kompletnych danych dla wykresu.")
-    return(capl::get_capl_bar_plot(score=d[[score]][ok],
-       interpretation=d[[k]][ok],x_label="Kategorie CAPL-2",y_label=score))
-  }
-  if(what=="hist"){
-    x<-as.numeric(d[[score]]);x<-x[is.finite(x)]
-    if(!length(x))stop("Brak wyników liczbowych.")
-    return(ggplot(data.frame(Wynik=x),aes(Wynik))+
-      geom_histogram(bins=20,fill=col,color="white")+
-      labs(title="Rozkład wyników",y="Liczba dzieci")+theme_minimal())
-  }
-  if(what=="box"){
-    q<-data.frame(Wynik=as.numeric(d[[score]]),Wiek=factor(d$age),
-      Plec=as.character(capl::validate_gender(d$gender)))
-    return(ggplot(q,aes(Wiek,Wynik,fill=Plec))+geom_boxplot(na.rm=TRUE)+
-      labs(title="Rozkład według wieku i płci",y=score)+theme_minimal())
-  }
-  if(what=="domains")
-    return(ggplot(t[["Profil domen"]],aes(reorder(Domena,Procent_maksimum),Procent_maksimum))+
-      geom_col(fill=col,na.rm=TRUE)+coord_flip()+ylim(0,100)+
-      labs(x=NULL,y="% maksymalnej liczby punktów",title="Profil domen")+theme_minimal())
-  if(what %in% c("categories","gender","age")){
-    key<-switch(what,categories="Kategorie",gender="Kategorie wg plci",age="Kategorie wg wieku")
-    v<-t[[key]]
-    if(what=="categories")p<-ggplot(v,aes(Kategoria,Procent,fill=Kategoria))+geom_col()
-    else if(what=="gender")p<-ggplot(v,aes(Plec,Procent,fill=Kategoria))+geom_col()
-    else p<-ggplot(v,aes(factor(Wiek),Procent,fill=Kategoria))+geom_col()
-    return(p+labs(y="% dzieci",title="Struktura kategorii CAPL-2",
-      x=if(what=="age")"Wiek" else if(what=="gender")"Płeć" else "Kategoria")+
-      theme_minimal())
-  }
-  if(what=="missing"){
-    keys<-intersect(original_fields,names(d))
-    if(!length(keys))stop("Brak zmiennych wejściowych.")
-    # Keep plot readable for large sample sizes.
-    idx<-seq_len(min(150,nrow(d)))
-    m<-as.matrix(is.na(d[idx,keys,drop=FALSE]))
-    gr<-expand.grid(Osoba=seq_len(nrow(m)),Zmienna=keys)
-    gr$Brak<-as.vector(m)
-    return(ggplot(gr,aes(Osoba,Zmienna,fill=Brak))+geom_tile()+
-      scale_fill_manual(values=c("FALSE"="#c0d9ec","TRUE"="#ba5361"),
-        labels=c("FALSE"="Dostępne","TRUE"="Brak"))+
-      labs(title="Braki danych (maks. 150 pierwszych wierszy)")+theme_minimal())
-  }
-  if(what=="status")
-    return(ggplot(t[["Status domen"]],aes(Domena,N,fill=Status))+geom_col()+
-      coord_flip()+labs(title="Statusy kompletności domen",y="Liczba dzieci")+theme_minimal())
-  stop("Nieobsługiwany typ wykresu.")
+
+# Statistical tables across all available numerical CAPL-2 outputs;
+# original scores and interpretations remain available in the raw results sheet.
+all_numeric_summaries <- function(d) {
+  keys <- names(d)[vapply(d,is.numeric,logical(1))]
+  keys <- keys[!(keys %in% c("age")) & !grepl("^steps[1-7]$|^non_wear_time[1-7]$",keys)]
+  all <- do.call(rbind,lapply(keys,function(key) {
+    data.frame(Wskaznik=key,t(numeric_summary(d[[key]])),check.names=FALSE)
+  }))
+  rownames(all)<-NULL
+  all
 }
