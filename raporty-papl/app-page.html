@@ -6,16 +6,15 @@ body{margin:0;background:#edf3f7;color:#19334a;font:16px system-ui}main{max-widt
 </style>
 <main>
 <h1>Generator raportów PAPL</h1>
-<p>Wczytaj arkusz z gotowymi wynikami, wybierz pomiar i pobierz raport.</p>
+<p>Wczytaj arkusz z gotowymi wynikami, wybierz zakres i pobierz raport.</p>
 <p><a href="/szablon.xlsx" download>Pobierz szablon Excel</a></p>
 <label>Plik Excel<input id="file" type="file" accept=".xlsx"></label>
 <p id="status" role="status" aria-live="polite"></p>
 <form id="form" hidden>
 <fieldset>
 <legend>Zakres raportu</legend>
-<label>Pomiar<select id="turn"></select></label>
-<label>Szkoła<select id="school"></select></label>
 <label>Rodzaj raportu<select id="mode"><option value="individual">Uczeń · PDF</option><option value="class">Klasa · PDF</option><option value="bundle">Klasa i raporty indywidualne · ZIP</option><option value="school">Szkoła · PDF</option></select></label>
+<label>Szkoła<select id="school"></select></label>
 <label id="roomLabel">Klasa<select id="classroom"></select></label>
 <label id="studentLabel">Uczeń<select id="student"></select></label>
 </fieldset>
@@ -35,7 +34,7 @@ body{margin:0;background:#edf3f7;color:#19334a;font:16px system-ui}main{max-widt
 <script>
 const el=id=>document.getElementById(id), request={'X-PAPL-Request':'1'};
 const labels={1:'Pretest',2:'Posttest',3:'Pomiar po roku'};
-let rows=[],file=null,previewUrl=null,downloadUrl=null,showStudent=false;
+let rows=[],roster=[],file=null,previewUrl=null,downloadUrl=null,showStudent=false;
 function screen(id){
  for(const name of ['form','review','ready'])el(name).hidden=id!==name;
 }
@@ -45,16 +44,14 @@ function options(id,values){
  if([...s.options].some(x=>x.value===prev))s.value=prev;
 }
 function update(){
- options('turn',[...new Set(rows.map(r=>r.turn))].sort().map(t=>[t,labels[t]]));
- const selected=rows.filter(r=>String(r.turn)===el('turn').value);
- options('school',selected.map(r=>[r.school,r.school]));
- const school=selected.filter(r=>r.school===el('school').value);
+ options('school',roster.map(r=>[r.school,r.school]));
+ const school=roster.filter(r=>r.school===el('school').value);
  options('classroom',school.map(r=>[r.classroom,r.classroom]));
  options('student',school.filter(r=>r.classroom===el('classroom').value).sort((a,b)=>a.name.localeCompare(b.name,'pl')).map(r=>[r.student,r.name]));
  el('roomLabel').style.display=el('mode').value==='school'?'none':'';
  el('studentLabel').style.display=el('mode').value==='individual'?'':'none';
 }
-for(const id of ['turn','school','mode','classroom'])el(id).onchange=update;
+for(const id of ['school','mode','classroom'])el(id).onchange=update;
 function status(text){el('status').textContent=text}
 async function post(path,selection){
  const headers={...request};
@@ -71,7 +68,7 @@ el('file').onchange=async()=>{
  screen(null);el('file').disabled=true;status('Wczytywanie arkusza…');
  try{
   const data=await (await post('/import')).json();
-  rows=data.rows;update();screen('form');
+  rows=data.rows;roster=data.roster;update();screen('form');
   status([file.name,new Set(rows.map(r=>r.student)).size+' uczniów z wynikami',
    new Set(rows.map(r=>r.school)).size+' szkół',new Set(rows.map(r=>JSON.stringify([r.school,r.classroom]))).size+' klas',
    rows.length+' pomiarów z wynikami', 'Brak wieku: '+data.ageMissing, 'Brak płci: '+data.sexMissing].join(' · '));
@@ -79,10 +76,10 @@ el('file').onchange=async()=>{
  finally{el('file').disabled=false}
 };
 function selection(){
- return Object.fromEntries(['turn','school','mode','classroom','student'].map(id=>[id,el(id).value]));
+ return Object.fromEntries(['school','mode','classroom','student'].map(id=>[id,el(id).value]));
 }
 function selectedClass(s){
- return rows.filter(r=>String(r.turn)===s.turn&&r.school===s.school&&r.classroom===s.classroom);
+ return roster.filter(r=>r.school===s.school&&r.classroom===s.classroom);
 }
 async function preview(){
  const s=selection();
@@ -90,10 +87,12 @@ async function preview(){
  const response=await post('/report',{...s,preview:'1'});
  if(previewUrl)URL.revokeObjectURL(previewUrl);
  previewUrl=URL.createObjectURL(await response.blob());el('pdf').src=previewUrl;
- const turns=[...new Set(rows.filter(r=>r.student===s.student).map(r=>r.turn))].sort().map(t=>labels[t]);
+ const members=s.mode==='school'?roster.filter(r=>r.school===s.school):selectedClass(s);
+ const ids=new Set(s.mode==='individual'?[s.student]:members.map(r=>r.student));
+ const turns=[...new Set(rows.filter(r=>ids.has(r.student)).map(r=>r.turn))].sort().map(t=>labels[t]);
  const count=selection().mode==='bundle'?' · '+(selectedClass(s).length+1)+' plików w paczce':'';
  const room=s.mode==='school'?'':' · klasa '+s.classroom;
- el('scope').textContent=s.school+room+' · '+(s.mode==='individual'?turns.join(', '):labels[s.turn])+count;
+ el('scope').textContent=s.school+room+' · '+turns.join(', ')+count;
  el('example').hidden=selection().mode!=='bundle';
  el('example').textContent=showStudent?'Pokaż raport klasy':'Pokaż raport ucznia';
  screen('review');

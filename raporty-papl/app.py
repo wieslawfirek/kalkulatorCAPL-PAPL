@@ -7,19 +7,14 @@ import os
 import base64
 import hmac
 import zipfile
-from collections import Counter
 from datetime import date, datetime
-from individual import report, register_font
-from html import escape
+from individual import report
+from aggregate import aggregate_pdf, group_history, reference_rosters
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from openpyxl import load_workbook
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 ROOT = Path(__file__).resolve().parent
 METRICS = dict(zip(
@@ -104,58 +99,21 @@ def import_excel(raw):
                 if test < birth:
                     raise ValueError(f'Wiersz {i}: data testu poprzedza datę urodzenia.')
                 age = test.year - birth.year - ((test.month, test.day) < (birth.month, birth.day))
-            if not any(value is not None for value in scores):
-                continue
             records.append(dict(student=student, name=' '.join(str(v).strip() for v in (first, last) if v) or student,
                 sex=int(sex) if sex else None, age=age, test=test if isinstance(test, date) else None, school=school, classroom=classroom, turn=turn,
                 scores=scores, levels=[category(int(sex) if sex else None, age, m, v)
                                       for m, v in zip(METRICS.values(), scores)]))
     finally:
         workbook.close()
-    if not records:
+    if not any(has_results(record) for record in records):
         raise ValueError('Arkusz nie zawiera wyników do raportowania.')
     return records
 
-def display(value):
-    return '—' if value is None else f'{value:.2f}'.rstrip('0').rstrip('.').replace('.', ',')
-
-def pdf(title, subtitle, rows, widths):
-    out = io.BytesIO()
-    register_font()
-    styles = getSampleStyleSheet()
-    for name in ('Title', 'Normal'):
-        styles[name].fontName = 'PAPL'
-    cell = styles['Normal'].clone('Cell', fontSize=8.5, leading=12)
-    content = [[Paragraph(escape(str(v)), cell) for v in row] for row in rows]
-    table = Table(content, colWidths=widths, repeatRows=1, hAlign='LEFT')
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#DCEAF4')),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F0F5F9')]),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 7),
-    ]))
-    doc = SimpleDocTemplate(out, pagesize=A4, leftMargin=42, rightMargin=42, topMargin=42, bottomMargin=42)
-    doc.build([Paragraph(escape(title), styles['Title']), Spacer(1, 12),
-               Paragraph(escape(subtitle), styles['Normal']), Spacer(1, 15), table])
-    return out.getvalue()
+def has_results(record):
+    return any(value is not None for value in record['scores'])
 
 def individual(history):
-    return report(history, NORMS, METRICS.values())
-
-def summary(records, title):
-    rows = [['Klasa / wskaźnik', 'Wyniki (n)', 'Z normą (n)', 'Początkujący', 'Postępy', 'Sprawny', 'Wyróżn.']]
-    groups = [('Razem', records)]
-    classes = sorted({r['classroom'] for r in records})
-    if len(classes) > 1:
-        groups += [(f'Klasa {c}', [r for r in records if r['classroom'] == c]) for c in classes]
-    for label, group in groups:
-        rows.append([label, '', '', '', '', '', ''])
-        for i, metric in enumerate(METRICS):
-            counts = Counter(r['levels'][i] for r in group if r['levels'][i] is not None)
-            rows.append([metric, sum(r['scores'][i] is not None for r in group),
-                         sum(counts.values()), *(counts[k] for k in range(4))])
-    return pdf(title, f"{TURNS[records[0]['turn']]} · {len(records)} uczniów z wynikiem · liczebności kategorii PAPL",
-               rows, [155, 54, 55, 68, 49, 46, 51])
+    return report([record for record in history if has_results(record)], NORMS, METRICS.values())
 
 def download_template():
     from openpyxl import Workbook
@@ -255,15 +213,17 @@ class App(BaseHTTPRequestHandler):
             path = self.route()
             if path == '/import':
                 keys = ('student', 'name', 'school', 'classroom', 'turn')
-                return self.json({'rows': [{k:r[k] for k in keys} for r in records],
-                                  'ageMissing':sum(r['age'] is None for r in records),
-                                  'sexMissing':sum(r['sex'] is None for r in records)})
+                measured = [r for r in records if has_results(r)]
+                return self.json({'roster': [{k:r[k] for k in keys} for r in reference_rosters(records)],
+                                  'rows': [{k:r[k] for k in keys} for r in measured],
+                                  'ageMissing':sum(r['age'] is None for r in measured),
+                                  'sexMissing':sum(r['sex'] is None for r in measured)})
             if path != '/report':
                 return self.send_error(404)
             raw = self.headers.get('X-PAPL-Selection','')
             fields = {k:v[0] for k,v in parse_qs(raw).items()}
-            turn, school, room, student, mode = (fields.get(k,'') for k in ('turn','school','classroom','student','mode'))
-            selected = [r for r in records if str(r['turn']) == turn and r['school'] == school
+            school, room, student, mode = (fields.get(k,'') for k in ('school','classroom','student','mode'))
+            selected = [r for r in reference_rosters(records) if r['school'] == school
                         and (mode=='school' or r['classroom']==room)]
             history = {}
             for record in records:
@@ -275,7 +235,7 @@ class App(BaseHTTPRequestHandler):
             if not selected or mode not in ('school','class','bundle'):
                 raise ValueError('Brak danych dla wybranego zakresu.')
             title = school if mode=='school' else f'{school} · klasa {room}'
-            report_bytes = summary(selected,title)
+            report_bytes = aggregate_pdf(group_history(records,selected),selected,title,by_class=mode=='school')
             if mode!='bundle' or fields.get('preview')=='1':
                 return self.send(report_bytes,'application/pdf',filename='raport-zbiorczy.pdf',inline=True)
             out = io.BytesIO()
