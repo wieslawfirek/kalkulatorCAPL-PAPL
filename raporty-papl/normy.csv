@@ -59,16 +59,6 @@ sex,age,metric,threshold1,threshold2,threshold3,precision
 1,10,step_average,6831,11999,14985,0
 1,11,step_average,7262,11999,14458,0
 1,12,step_average,6567,11999,15296,0
-2,8,self_report_pa,4,4,6,0
-2,9,self_report_pa,3,4,6,0
-2,10,self_report_pa,3,4,6,0
-2,11,self_report_pa,3,4,6,0
-2,12,self_report_pa,3,4,6,0
-1,8,self_report_pa,4,4,6,0
-1,9,self_report_pa,4,4,6,0
-1,10,self_report_pa,4,4,6,0
-1,11,self_report_pa,4,4,6,0
-1,12,self_report_pa,4,4,6,0
 2,8,camsa_skill_time_score,11,17,20,0
 2,9,camsa_skill_time_score,13,19,22,0
 2,10,camsa_skill_time_score,13,20,22,0

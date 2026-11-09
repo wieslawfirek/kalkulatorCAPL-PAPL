@@ -19,9 +19,9 @@ from openpyxl import load_workbook
 ROOT = Path(__file__).resolve().parent
 METRICS = dict(zip(
     ('Wynik CAMSA', 'Wynik Beep Testu', 'Wynik Deski', 'Średnia dzienna liczba kroków',
-     'Samoocena aktywności fizycznej', 'Kompetencje fizyczne (pkt)', 'Zachowania codzienne (pkt)',
+     'Kompetencje fizyczne (pkt)', 'Zachowania codzienne (pkt)',
      'Motywacja i pewność siebie (pkt)', 'Wiedza i zrozumienie (pkt)', 'Ogólny wynik alfabetyzacji ruchowej (pkt)'),
-    ('camsa_skill_time_score', 'pacer_20m_laps', 'plank_time', 'step_average', 'self_report_pa',
+    ('camsa_skill_time_score', 'pacer_20m_laps', 'plank_time', 'step_average',
      'pc_score', 'db_score', 'mc_score', 'ku_score', 'capl_score')
 ))
 FIELDS = ('Identyfikator ucznia', 'Imię', 'Nazwisko', 'Płeć', 'Szkoła', 'Klasa',
@@ -124,7 +124,7 @@ def download_template():
     book = Workbook()
     sheet = book.active
     sheet.title = 'Wyniki pomiarów'
-    sheet.append([*FIELDS, *METRICS])
+    sheet.append([*FIELDS, 'Wiek w dniu testu (pełne lata)', *METRICS])
     sheet.freeze_panes = 'D2'
     sheet.row_dimensions[1].height = 33
     for cell in sheet[1]:
@@ -142,10 +142,10 @@ def download_template():
     for line in ('Jeden wiersz to jeden pomiar ucznia. Zachowaj identyfikator we wszystkich turach.',
                  'Płeć: 1 = chłopiec, 2 = dziewczynka.',
                  'Numer pomiaru: 1 = pretest, 2 = posttest, 3 = pomiar po roku.',
-                 'Daty wpisuj jako daty Excela. Wiek oblicza generator.',
+                 'Daty wpisuj jako daty Excela. Kolumnę wieku możesz zostawić pustą, wiek obliczy generator.',
                  'CAMSA: łączny wynik punktowy za czas i umiejętności.',
                  'Beep Test: liczba odcinków 20 m. Deska: czas w sekundach.',
-                 'Samoocena aktywności: liczba dni. Brak wyniku pozostaw pusty.'):
+                 'Brak wyniku pozostaw pusty.'):
         guide.append([line])
     guide.column_dimensions['A'].width = 100
     out = io.BytesIO()

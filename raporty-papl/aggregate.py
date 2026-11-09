@@ -14,11 +14,11 @@ TURNS = {1:'Pretest',2:'Posttest',3:'Pomiar po roku'}
 LEVELS = ('Początkujący','Dokonujący postępów','Sprawny','Wyróżniający się')
 SHORT = ('P','DP','S','W')
 METRICS = (
-    (9,'Ogólny wynik alfabetyzacji ruchowej'),
-    (5,'Kompetencje fizyczne'),
-    (6,'Zachowania codzienne'),
-    (7,'Motywacja i pewność siebie'),
-    (8,'Wiedza i zrozumienie'),
+    (8,'Ogólny wynik alfabetyzacji ruchowej'),
+    (4,'Kompetencje fizyczne'),
+    (5,'Zachowania codzienne'),
+    (6,'Motywacja i pewność siebie'),
+    (7,'Wiedza i zrozumienie'),
 )
 
 def reference_rosters(records):
@@ -43,7 +43,7 @@ def distribution(records, turn, metric):
 
 def transitions(records, first, second):
     by_turn = {
-        turn:{r['student']:r['levels'][9] for r in records if r['turn']==turn and r['levels'][9] is not None}
+        turn:{r['student']:r['levels'][8] for r in records if r['turn']==turn and r['levels'][8] is not None}
         for turn in (first, second)
     }
     start, end = by_turn[first], by_turn[second]
@@ -107,7 +107,7 @@ def aggregate_pdf(records, roster, title, by_class=False):
         for metric,label in METRICS:
             items.append(chart(label,history,all_turns,metric))
     distributions_page(title,records,len(roster))
-    overall_turns=[turn for turn in all_turns if sum(distribution(records,turn,9)[1])]
+    overall_turns=[turn for turn in all_turns if sum(distribution(records,turn,8)[1])]
     if len(all_turns)>1:
         items.extend([PageBreak(),paragraph('Przejścia między kategoriami PAPL','Title'),
                       paragraph(title),paragraph('Wynik ogólny. Porównanie obejmuje uczniów z kategorią w obu turach, połączonych według identyfikatora.')])
