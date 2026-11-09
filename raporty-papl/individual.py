@@ -133,11 +133,10 @@ def report(records, norms, metrics):
     legend(766)
     c.showPage()
     header('Moja aktywność i próby ruchowe',2)
-    text(42,146,'Aktywność na co dzień',15,TEAL)
-    chart(42,161,511,180,0,'Kroki na dzień',None)
-    text(42,374,'Zadania ruchowe',15,TEAL)
-    for k,(unit,top) in enumerate((('Sekundy',None),('Ukończone odcinki 20 m',None),('Punkty w próbie / 28',28))):
-        chart(42+k*173,388,165,185,1+k,unit,top)
+    measures = (('Kroki na dzień', None), ('Sekundy', None),
+                ('Ukończone odcinki 20 m', None), ('Punkty w próbie / 28', 28))
+    for k, (unit, top) in enumerate(measures):
+        chart(42+(k%2)*261, 146+(k//2)*224, 250, 205, k, unit, top)
     legend(597)
     rect(42,618,511,112,PANEL,radius=9)
     text(55,641,'Co się zmieniło?',12,TEAL)
