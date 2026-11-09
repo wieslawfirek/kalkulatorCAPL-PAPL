@@ -1,0 +1,11 @@
+{
+  "functions": {
+    "api/handler.py": {"includeFiles": "{index.html,normy.csv,font.b64}", "maxDuration": 60}
+  },
+  "rewrites": [
+    {"source": "/", "destination": "/api/handler"},
+    {"source": "/szablon.xlsx", "destination": "/api/handler?route=/szablon.xlsx"},
+    {"source": "/import", "destination": "/api/handler?route=/import"},
+    {"source": "/report", "destination": "/api/handler?route=/report"}
+  ]
+}

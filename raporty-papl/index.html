@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Generator raportów PAPL</title>
+<style>
+body{margin:0;background:#edf3f7;color:#19334a;font:16px system-ui}main{max-width:760px;margin:6vh auto;padding:32px;background:white;border-radius:16px;box-shadow:0 8px 35px #19334a18}h1{margin-top:0}label{display:grid;gap:6px;font-weight:650}fieldset{display:grid;gap:16px;border:1px solid #c9d7e4;padding:20px;margin:20px 0;border-radius:10px}button,select,input{font:inherit;padding:9px;border:1px solid #9db4c7;border-radius:6px}button{background:#175574;color:white;cursor:pointer}button:disabled{opacity:.55;cursor:wait}#status{min-height:1.5em}small{color:#456176}
+</style>
+<main>
+<h1>Generator raportów PAPL</h1>
+<p>Wczytaj arkusz z gotowymi wynikami, wybierz pomiar i pobierz raport.</p>
+<p><a href="/szablon.xlsx" download>Pobierz szablon Excel</a></p>
+<label>Plik Excel<input id="file" type="file" accept=".xlsx"></label>
+<p id="status" role="status" aria-live="polite"></p>
+<form id="form" hidden>
+<fieldset>
+<legend>Zakres raportu</legend>
+<label>Pomiar<select id="turn"></select></label>
+<label>Szkoła<select id="school"></select></label>
+<label>Rodzaj raportu<select id="mode"><option value="individual">Uczeń · PDF</option><option value="class">Klasa · PDF</option><option value="bundle">Klasa i raporty indywidualne · ZIP</option><option value="school">Szkoła · PDF</option></select></label>
+<label id="roomLabel">Klasa<select id="classroom"></select></label>
+<label id="studentLabel">Uczeń<select id="student"></select></label>
+</fieldset>
+<button id="preview">Pokaż podgląd</button>
+</form>
+<p><small>Dane są przetwarzane lokalnie. Zamknięcie programu usuwa je z pamięci.</small></p>
+<section id="review" hidden>
+<h2>Podgląd raportu</h2><p id="scope"></p>
+<button id="example" type="button" hidden>Pokaż raport ucznia</button>
+<iframe id="pdf" title="Podgląd PDF" style="width:100%;height:550px;border:1px solid #c9d7e4;margin:12px 0"></iframe>
+<button id="generate" type="button">Generuj raport</button>
+<button id="back" type="button">Wróć do wyboru</button>
+</section>
+<section id="ready" hidden><h2>Raport gotowy</h2><a id="download">Pobierz raport</a>
+<button id="another" type="button">Utwórz kolejny raport</button></section>
+</main>
+<script>
+const el=id=>document.getElementById(id), request={'X-PAPL-Request':'1'};
+const labels={1:'Pretest',2:'Posttest',3:'Pomiar po roku'};
+let rows=[],file=null,previewUrl=null,downloadUrl=null,showStudent=false;
+function screen(id){
+ for(const name of ['form','review','ready'])el(name).hidden=id!==name;
+}
+function options(id,values){
+ const s=el(id),prev=s.value;
+ s.replaceChildren(...[...new Map(values)].map(([key,label])=>new Option(label,key)));
+ if([...s.options].some(x=>x.value===prev))s.value=prev;
+}
+function update(){
+ options('turn',[...new Set(rows.map(r=>r.turn))].sort().map(t=>[t,labels[t]]));
+ const selected=rows.filter(r=>String(r.turn)===el('turn').value);
+ options('school',selected.map(r=>[r.school,r.school]));
+ const school=selected.filter(r=>r.school===el('school').value);
+ options('classroom',school.map(r=>[r.classroom,r.classroom]));
+ options('student',school.filter(r=>r.classroom===el('classroom').value).sort((a,b)=>a.name.localeCompare(b.name,'pl')).map(r=>[r.student,r.name]));
+ el('roomLabel').style.display=el('mode').value==='school'?'none':'';
+ el('studentLabel').style.display=el('mode').value==='individual'?'':'none';
+}
+for(const id of ['turn','school','mode','classroom'])el(id).onchange=update;
+function status(text){el('status').textContent=text}
+async function post(path,selection){
+ const headers={...request};
+ if(selection)headers['X-PAPL-Selection']=new URLSearchParams(selection).toString();
+ const response=await fetch(path,{method:'POST',headers,body:file});
+ if(!response.ok){
+  const data=await response.json().catch(()=>({}));
+  throw Error(data.error||'Operacja nie powiodła się. Sprawdź połączenie i zaloguj się ponownie.');
+ }
+ return response;
+}
+el('file').onchange=async()=>{
+ file=el('file').files[0];if(!file)return;
+ screen(null);el('file').disabled=true;status('Wczytywanie arkusza…');
+ try{
+  const data=await (await post('/import')).json();
+  rows=data.rows;update();screen('form');
+  status([file.name,new Set(rows.map(r=>r.student)).size+' uczniów z wynikami',
+   new Set(rows.map(r=>r.school)).size+' szkół',new Set(rows.map(r=>JSON.stringify([r.school,r.classroom]))).size+' klas',
+   rows.length+' pomiarów z wynikami', 'Brak wieku: '+data.ageMissing, 'Brak płci: '+data.sexMissing].join(' · '));
+ }catch(e){status(e.message)}
+ finally{el('file').disabled=false}
+};
+function selection(){
+ return Object.fromEntries(['turn','school','mode','classroom','student'].map(id=>[id,el(id).value]));
+}
+function selectedClass(s){
+ return rows.filter(r=>String(r.turn)===s.turn&&r.school===s.school&&r.classroom===s.classroom);
+}
+async function preview(){
+ const s=selection();
+ if(s.mode==='bundle'&&showStudent){s.mode='individual';s.student=selectedClass(s)[0].student}
+ const response=await post('/report',{...s,preview:'1'});
+ if(previewUrl)URL.revokeObjectURL(previewUrl);
+ previewUrl=URL.createObjectURL(await response.blob());el('pdf').src=previewUrl;
+ const turns=[...new Set(rows.filter(r=>r.student===s.student).map(r=>r.turn))].sort().map(t=>labels[t]);
+ const count=selection().mode==='bundle'?' · '+(selectedClass(s).length+1)+' plików w paczce':'';
+ const room=s.mode==='school'?'':' · klasa '+s.classroom;
+ el('scope').textContent=s.school+room+' · '+(s.mode==='individual'?turns.join(', '):labels[s.turn])+count;
+ el('example').hidden=selection().mode!=='bundle';
+ el('example').textContent=showStudent?'Pokaż raport klasy':'Pokaż raport ucznia';
+ screen('review');
+}
+async function busy(button,action){
+ button.disabled=true;el('file').disabled=true;
+ try{await action()}catch(e){status(e.message)}
+ finally{button.disabled=false;el('file').disabled=false}
+}
+el('form').onsubmit=e=>{e.preventDefault();showStudent=false;busy(el('preview'),preview)};
+el('example').onclick=()=>{showStudent=!showStudent;busy(el('example'),preview)};
+el('back').onclick=el('another').onclick=()=>screen('form');
+el('generate').onclick=()=>busy(el('generate'),async()=>{
+ const response=await post('/report',selection());
+ if(downloadUrl)URL.revokeObjectURL(downloadUrl);
+ downloadUrl=URL.createObjectURL(await response.blob());
+ const link=el('download');
+ link.href=downloadUrl;link.download=response.headers.get('Content-Disposition').match(/filename="([^"]+)"/)[1];
+ link.textContent='Pobierz '+link.download;screen('ready');
+});
+</script>
+</html>
