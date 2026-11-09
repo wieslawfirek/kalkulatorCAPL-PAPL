@@ -239,7 +239,7 @@ class App(BaseHTTPRequestHandler):
         if path == '/szablon.xlsx':
             return self.send(download_template(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename='Szablon_wynikow_PAPL.xlsx')
         if path in ('/', '/api/handler'):
-            return self.send((ROOT/'index.html').read_bytes(), 'text/html; charset=utf-8')
+            return self.send((ROOT/'app-page.html').read_bytes(), 'text/html; charset=utf-8')
         self.send_error(404)
 
     def do_POST(self):

@@ -1,6 +1,6 @@
 {
   "functions": {
-    "api/handler.py": {"includeFiles": "{index.html,normy.csv,font.b64}", "maxDuration": 60}
+    "api/handler.py": {"includeFiles": "{app-page.html,normy.csv,font.b64}", "maxDuration": 60}
   },
   "rewrites": [
     {"source": "/", "destination": "/api/handler"},
