@@ -1,1 +1,5 @@
-from app import App as handler
+from app import App
+
+
+class handler(App):
+    pass
