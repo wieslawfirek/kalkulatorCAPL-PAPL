@@ -125,22 +125,31 @@ def distribution_row(label, available, counts, width):
     draw.add(Rect(0, 17 if not narrow else 7, width, 15 if narrow else 17, fillColor=PAPER, strokeColor=None))
     if n:
         x = 0
+        small_segments = []
         for count, color in zip(counts, BANDS):
+            if not count:
+                continue
             segment = width * count / n
-            if count:
-                draw.add(Rect(x, 17 if not narrow else 7, segment, 15 if narrow else 17, fillColor=color, strokeColor=None))
-                value = percent(count, n)
-                if segment >= stringWidth(value, 'PAPL', 8) + 6:
-                    draw.add(String(x + segment / 2, 23 if not narrow else 13, value, textAnchor='middle',
-                                    fontName='PAPL', fontSize=8, fillColor=INK))
+            draw.add(Rect(x, 17 if not narrow else 7, segment, 15 if narrow else 17,
+                          fillColor=color, strokeColor=None))
+            value = percent(count, n)
+            if segment >= stringWidth(value, 'PAPL', 8) + 6:
+                draw.add(String(x + segment / 2, 23 if not narrow else 12, value, textAnchor='middle',
+                                fontName='PAPL', fontSize=8, fillColor=INK))
+            else:
+                small_segments.append((color, value))
             x += segment
-        details = '  /  '.join(percent(count, n) for count in counts)
-        benchmark = f'Co najmniej sprawny {percent(sum(counts[2:]), n)}'
-        if not narrow:
-            details += '   ·   ' + benchmark
+        x = 0
+        baseline = 4 if not narrow else 0
+        for color, value in small_segments:
+            draw.add(Rect(x, baseline, 6, 5, fillColor=color, strokeColor=None))
+            draw.add(String(x + 9, baseline, value, fontName='PAPL', fontSize=8, fillColor=MUTED))
+            x += 16 + stringWidth(value, 'PAPL', 8)
+        details = ''
     else:
         details = 'Brak kategorii PAPL w tym pomiarze'
-    draw.add(String(0, 5 if not narrow else 1, details, fontName='PAPL', fontSize=8, fillColor=MUTED))
+    if details:
+        draw.add(String(0, 5 if not narrow else 0, details, fontName='PAPL', fontSize=8, fillColor=MUTED))
     sample = f'n = {n}' + (f' · bez kategorii {available - n}' if available > n else '')
     draw.add(String(width, 39 if not narrow else 27, sample, textAnchor='end', fontName='PAPL', fontSize=8, fillColor=MUTED))
     label_width = width - stringWidth(sample, 'PAPL', 8) - 8
@@ -287,8 +296,28 @@ def aggregate_pdf(records, roster, title, by_class=False, use_ai=True):
 
     items = heading('Wynik ogólny alfabetyzacji ruchowej')
     items += [paragraph(f'Skład grupy według pomiaru „{TURNS[reference]}” · {len(roster)} uczniów z wynikiem', 9, MUTED),
-              Spacer(1, 6), legend()]
+              Spacer(1, 6)]
     series = {metric: proficiency_series(records, turns, metric) for metric, _ in METRICS}
+    current_share = series[8][-1]
+    badges = [(str(len(roster)), 'Uczniowie w raporcie'),
+              (percent(current_share, 1) if current_share is not None else 'Brak danych',
+               'Co najmniej sprawni · ostatni pomiar')]
+    if len(turns) > 1:
+        progress_counts = student_progress(records, 8)[0]
+        compared = sum(progress_counts)
+        badges.append((percent(progress_counts[0], compared) if compared else 'Brak danych',
+                       f'Wyższa kategoria · n = {compared}'))
+    gap = 8
+    badge_width = (WIDTH - gap * (len(badges) - 1)) / len(badges)
+    badge_row, badge_widths = [], []
+    for value, label in badges:
+        if badge_row:
+            badge_row.append('')
+            badge_widths.append(gap)
+        badge_row.append(grid([[[paragraph(value, 16, GREEN), paragraph(label, 9, MUTED)]]],
+                              [badge_width], card=True, padding=7))
+        badge_widths.append(badge_width)
+    items += [grid([badge_row], badge_widths), Spacer(1, 5), legend()]
     distribution_card = card([paragraph('Rozkład poziomów', 13, GREEN), Spacer(1, 5),
                               *charts(records, turns, 8, 316)], 338)
     score_items = [paragraph('Co najmniej sprawni', 12, GREEN), proficiency_chart(series[8], 139),
@@ -346,7 +375,7 @@ def aggregate_pdf(records, roster, title, by_class=False, use_ai=True):
         panels.append(grid([[panel]], [249], card=True, padding=4))
     items += [grid([[panels[0], '', panels[1]]], [249, 13, 249]), Spacer(1, 8),
               grid([[panels[2], '', panels[3]]], [249, 13, 249]), Spacer(1, 10),
-              paragraph('Kolejność wartości pod słupkami odpowiada legendzie. n oznacza liczbę uczniów z kategorią PAPL w danym pomiarze i obszarze.', 8, MUTED)]
+              paragraph('Kolorowe znaczniki pod słupkiem opisują tylko wąskie segmenty. n oznacza liczbę uczniów z kategorią PAPL w danym pomiarze i obszarze.', 8, MUTED)]
 
     if comparison:
         items += [PageBreak(), *heading(f'Porównanie klas · {TURNS[turns[-1]]}'), legend()]

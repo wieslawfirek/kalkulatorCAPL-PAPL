@@ -186,7 +186,7 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
             if last['scores'][trial] > previous['scores'][trial]:
                 text += f' Brawo! W ostatniej dostępnej próbie {name} {achievement}.'
             elif last['scores'][trial] < previous['scores'][trial]:
-                text += (' W ostatniej dostępnej próbie deski pozycję udało Ci się utrzymać krócej niż wcześniej.'
+                text += (' W ostatniej dostępnej próbie deski czas utrzymania pozycji był krótszy niż wcześniej.'
                          if trial == 2 else f' W ostatniej dostępnej próbie {name} wynik był niższy niż wcześniej.')
             else:
                 text += f' Wynik {name} pozostał taki sam.'
