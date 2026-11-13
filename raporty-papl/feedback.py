@@ -84,10 +84,10 @@ LEVEL_MEANINGS = (
 
 CHILD_DOMAINS = {
     4: ('Zadania ruchowe', 'Ta część pokazuje, jak poszło Ci w różnych zadaniach ruchowych.',
-        'Wybierz jedną zabawę i sprawdź, co zmienia się, gdy powtórzysz ją w podobnych warunkach.'),
+        'Ustaw kosz i spróbuj wrzucić do niego pięć zwiniętych skarpetek. Innym razem rzuć z tego samego miejsca i zobacz, czy uda Ci się trafić częściej.'),
     5: ('Ruch na co dzień', 'Ta część dotyczy ruchu w zwykłe dni, także poza lekcjami WF.',
         'Zastanów się, kiedy najłatwiej znaleźć chwilę na ruch, który lubisz.'),
-    6: ('Chęć do ruchu i pewność siebie', 'Tutaj liczą się Twoje odpowiedzi na pytania o to, jak odbierasz ruch i jak się w nim czujesz.',
+    6: ('Motywacja do ruchu i pewność siebie', 'Tutaj liczą się Twoje odpowiedzi na pytania o to, jak odbierasz ruch i jak się w nim czujesz.',
         'Pomyśl, w jakiej zabawie czujesz się swobodnie i czego chcesz spróbować następnym razem.'),
     7: ('Wiedza o ruchu', 'W tej części liczą się Twoje odpowiedzi na pytania o ruch.',
         'Możesz wykorzystać tę wiedzę w zabawie, na przykład zauważyć, jak zmienia się oddech, gdy zmieniasz tempo.'),
@@ -219,7 +219,7 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
             3: 'w dniach najnowszego pomiaru średnia dzienna liczba kroków była większa',
             4: 'Twój wynik w zestawie zadań ruchowych wzrósł',
             5: 'Twój wynik w części o codziennym ruchu wzrósł',
-            6: 'Twój wynik odpowiedzi o chęci do ruchu i pewności siebie wzrósł',
+            6: 'Twój wynik odpowiedzi o motywacji do ruchu i pewności siebie wzrósł',
             7: 'w odpowiedziach na pytania o ruch udało Ci się zdobyć więcej punktów',
             8: 'Twój wynik ogólny wzrósł',
         }

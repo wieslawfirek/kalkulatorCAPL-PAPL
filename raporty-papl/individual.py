@@ -17,7 +17,7 @@ W, H = 595.28, 841.89
 ABBR = ('P', 'DP', 'S', 'W')
 LEGEND = ('P · Początkujący', 'DP · Dokonujący postępów', 'S · Sprawny', 'W · Wyróżniający się')
 LABELS = ('Średnia dzienna liczba kroków', 'Deska', 'Beep Test', 'Test umiejętności ruchowych',
-          'Kompetencje fizyczne', 'Codzienne zachowania', 'Motywacja i pewność siebie', 'Wiedza i zrozumienie', 'Mój wynik ogólny w czasie')
+          'Kompetencje fizyczne', 'Codzienne zachowania', 'Motywacja do ruchu i pewność siebie', 'Wiedza i zrozumienie', 'Mój wynik ogólny w czasie')
 MONTHS = ('Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru')
 
 def register_font():
