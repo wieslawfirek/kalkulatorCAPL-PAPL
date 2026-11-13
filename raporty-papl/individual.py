@@ -145,14 +145,27 @@ def report(records, norms, metrics, use_ai=True):
     for k, (unit, top) in enumerate(measures):
         chart(42+(k%2)*261, 135+(k//2)*194, 250, 177, k, unit, top)
     legend(524)
-    description, advice = child_feedback(records, norms, keys, fmt, use_ai=use_ai)
-    rect(42,538,511,253,white,BORDER,10)
-    text(55,560,'Co mówią Twoje wyniki?',13,TEAL)
-    end = 570 + block(description, 55, 570, 485, 11)
-    text(55,end+18,'Czego możesz spróbować?',12,TEAL)
-    end += 25 + block(advice, 55, end+25, 485, 11)
-    text(55,end+18,'Dla rodzica',12,TEAL)
-    block('Zapytaj dziecko, co z raportu zwróciło jego uwagę. Wybierzcie razem jedną aktywność, na którą ma ochotę, i umówcie się, kiedy jej spróbujecie.', 55, end+25, 485, 11)
+    c.showPage()
+    sections, advice, parent = child_feedback(records, norms, keys, fmt, use_ai=use_ai)
+    sections += [('Czego możesz spróbować?', advice), ('Dla rodzica', parent)]
+    page = 3
+    header('Co mówią Twoje wyniki?', page)
+    y = 142
+    for title, value in sections:
+        style = ParagraphStyle('Narracja', fontName='PAPL', fontSize=11, leading=15, textColor=INK)
+        paragraph = Paragraph(escape(value), style)
+        _, height = paragraph.wrap(511, H)
+        heading_height = 22 if title else 0
+        if y + heading_height + height > 788:
+            c.showPage()
+            page += 1
+            header('Co mówią Twoje wyniki?', page)
+            y = 142
+        if title:
+            text(42, y + 12, title, 12, TEAL)
+            y += heading_height
+        paragraph.drawOn(c, 42, H - y - height)
+        y += height + 10
     c.showPage()
     c.save()
     return out.getvalue()

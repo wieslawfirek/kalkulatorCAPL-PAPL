@@ -75,59 +75,167 @@ def model_choice(options):
     return None
 
 
+LEVEL_MEANINGS = (
+    'To punkt wyjścia do ćwiczenia podstaw. Możesz zacząć od prostych prób i poprosić o pomoc, gdy jej potrzebujesz.',
+    'Masz już podstawy, które możesz utrwalać w różnych zabawach i zadaniach.',
+    'Twój wynik osiąga poziom sprawności określony w normach dla Twojego wieku. Możesz wykorzystać to, co już Ci wychodzi, w nowych zadaniach.',
+    'To najwyższa kategoria wyniku w tym badaniu. Możesz wykorzystać swoje mocne strony, podejmując nowe wyzwania w ruchu.',
+)
+
+CHILD_DOMAINS = {
+    4: ('Zadania ruchowe', 'Ta część pokazuje, jak poszło Ci w różnych zadaniach ruchowych.',
+        'Wybierz jedną zabawę i sprawdź, co zmienia się, gdy powtórzysz ją w podobnych warunkach.'),
+    5: ('Ruch na co dzień', 'Ta część dotyczy ruchu w zwykłe dni, także poza lekcjami WF.',
+        'Zastanów się, kiedy najłatwiej znaleźć chwilę na ruch, który lubisz.'),
+    6: ('Chęć do ruchu i pewność siebie', 'Tutaj liczą się Twoje odpowiedzi na pytania o to, jak odbierasz ruch i jak się w nim czujesz.',
+        'Pomyśl, w jakiej zabawie czujesz się swobodnie i czego chcesz spróbować następnym razem.'),
+    7: ('Wiedza o ruchu', 'W tej części liczą się Twoje odpowiedzi na pytania o ruch.',
+        'Możesz wykorzystać tę wiedzę w zabawie, na przykład zauważyć, jak zmienia się oddech, gdy zmieniasz tempo.'),
+}
+
+CHILD_TRIALS = {
+    0: ('w torze ruchowym', 'pkt'),
+    1: ('w biegu wahadłowym', 'odc.'),
+    2: ('w desce', 's'),
+    3: ('w pomiarze średniej dziennej liczby kroków', 'kroków'),
+}
+
+
 def child_feedback(records, norms, keys, fmt, use_ai=True):
     recent = records[-1]
-    overall = [row for row in records if row['scores'][8] is not None]
-    notes = []
-    candidates = ('OG1', 'OG2')
+    available = {
+        idx: [row for row in records if row['scores'][idx] is not None]
+        for idx in range(9)
+    }
+
+    def trajectory(history, idx, unit='pkt'):
+        if len(history) < 2:
+            return ''
+        values = [fmt(row['scores'][idx]) for row in history]
+        if len(set(values)) == 1:
+            return f' Wynik był taki sam we wszystkich {len(values)} dostępnych pomiarach.'
+        if [row['turn'] for row in history] == list(range(history[0]['turn'], history[-1]['turn'] + 1)):
+            sequence = " i ".join(values) if len(values) == 2 else f"{values[0]}, {values[1]} i {values[2]}"
+            return f' W kolejnych badaniach wyniki to {sequence} {unit}.'
+        return f' W pomiarze {history[0]["turn"]} wynik wyniósł {values[0]} {unit}, a w pomiarze {history[-1]["turn"]} {values[-1]} {unit}.'
+
+    def category_change(history, idx):
+        if len(history) < 2:
+            return ''
+        previous, current = history[-2:]
+        old, new = previous['levels'][idx], current['levels'][idx]
+        if old is None or new is None:
+            return ''
+        if old == new:
+            return ' W dwóch ostatnich dostępnych pomiarach poziom był taki sam.' if idx == 8 else ''
+        return f' W poprzednim dostępnym pomiarze wynik był na poziomie „{LEVELS[old]}”.'
+
+    def current_result(idx, maximum):
+        current = available[idx][-1]
+        when = 'W najnowszym badaniu' if current is recent else f'W pomiarze {current["turn"]}, ostatnim z wynikiem w tej części,'
+        level = current['levels'][idx]
+        text = f'{when} Twój wynik to {fmt(current["scores"][idx])} na {maximum} punktów.'
+        if level is not None:
+            text += f' Mieści się na poziomie „{LEVELS[level]}”.'
+        return text
+
+    overall = available[8]
+    introduction = ''
     if recent['scores'][8] is None:
-        notes.append('W najnowszym badaniu brakuje wyniku łącznego.')
+        introduction = 'Z najnowszego badania mamy wyniki poszczególnych części. Brakuje wyniku łącznego. '
     if overall:
+        introduction += current_result(8, 100)
         current = overall[-1]
         level = current['levels'][8]
-        when = 'W najnowszym badaniu' if current is recent else 'We wcześniejszym badaniu'
-        notes.append(f'{when} udało Ci się zdobyć {fmt(current["scores"][8])} na 100 punktów.')
         if level is not None:
-            notes.append(f'Ten wynik mieści się na poziomie „{LEVELS[level]}”.')
-    if len(overall) > 1:
-        previous = overall[-2]
-        points = [fmt(row['scores'][8]) for row in overall]
-        if len(points) == 3:
-            notes.append(f'Twoje wyniki w kolejnych badaniach to {points[0]}, {points[1]} i {points[2]} pkt.')
-        else:
-            notes.append(f'Wcześniejszy wynik to {points[0]} pkt.')
-        old_level, new_level = previous['levels'][8], current['levels'][8]
-        if old_level is not None and new_level is not None and old_level != new_level:
-            previous_direction = 'niższy' if new_level > old_level else 'wyższy'
-            notes.append(f'W poprzednim badaniu z wynikiem łącznym poziom był {previous_direction} („{LEVELS[old_level]}”).')
-            old_norm = norms.get((previous['sex'], previous['age'], keys[8]))
-            new_norm = norms.get((current['sex'], current['age'], keys[8]))
-            if new_level < old_level and current['scores'][8] > previous['scores'][8]:
-                candidates = ('MI1',)
-                if old_norm and new_norm and new_norm[old_level] > old_norm[old_level]:
-                    notes.append('Przybyło Ci punktów, a do osiągnięcia poprzedniego poziomu w ostatnim badaniu potrzeba ich było więcej.')
-        elif old_level is not None and old_level == new_level:
-            notes.append('W dwóch ostatnich badaniach z wynikiem łącznym poziom pozostał ten sam.')
+            introduction += ' ' + LEVEL_MEANINGS[level]
+        introduction += trajectory(overall, 8) + category_change(overall, 8)
+        if len(overall) > 1:
+            previous = overall[-2]
+            old = previous['levels'][8]
+            earlier_norm = norms.get((previous['sex'], previous['age'], keys[8]))
+            latest_norm = norms.get((current['sex'], current['age'], keys[8]))
+            if (old is not None and level is not None and 0 < old and level < old
+                    and current['scores'][8] > previous['scores'][8] and earlier_norm and latest_norm):
+                old_threshold, new_threshold = earlier_norm[old], latest_norm[old]
+                old_rounded = round(current['scores'][8], earlier_norm[0])
+                clears_old = old_rounded >= old_threshold if old == 1 else old_rounded > old_threshold
+                if clears_old and new_threshold > old_threshold:
+                    introduction += ' Punktów jest więcej, a do poprzedniego poziomu w tym badaniu potrzeba było wyższego wyniku.'
+    sections = [('', introduction.strip())]
+    for idx, (title, meaning, suggestion) in CHILD_DOMAINS.items():
+        history = available[idx]
+        trials = [trial for trial in ((1, 2, 0) if idx == 4 else (3,) if idx == 5 else ())
+                  if available[trial]]
+        if not history and not trials:
+            continue
+        text = meaning if history else ''
+        if history:
+            text += ' ' + current_result(idx, 10 if idx == 7 else 30)
+            text += trajectory(history, idx) + category_change(history, idx)
+        for trial in trials:
+            trial_history = available[trial]
+            last = trial_history[-1]
+            name, unit = CHILD_TRIALS[trial]
+            value = fmt(last['scores'][trial])
+            if trial == 3:
+                text += f' W pomiarze {last["turn"]} średnia dzienna liczba kroków wyniosła {value}.'
+            else:
+                text += f' W pomiarze {last["turn"]} wynik {name} to {value} {unit}.'
+            if len(trial_history) >= 2:
+                previous = trial_history[-2]
+                earlier = fmt(previous['scores'][trial])
+                if value != earlier:
+                    text += f' W pomiarze {previous["turn"]} było to {earlier} {unit}.'
+        if history:
+            level = history[-1]['levels'][idx]
+            if level == 0:
+                text += ' Zacznij od łatwiejszej wersji zabawy, którą chcesz wypróbować.'
+            elif level == 1:
+                text += ' To dobry punkt wyjścia do utrwalania tego, co już Ci wychodzi.'
+            text += ' ' + suggestion
+        sections.append((title, text.strip()))
 
-    steps = [row for row in records if row['scores'][3] is not None]
-    if len(notes) < 5 and len(steps) > 1 and steps[-1] is recent and steps[-1]['scores'][3] != steps[-2]['scores'][3]:
-        lower = steps[-1]['scores'][3] < steps[-2]['scores'][3]
-        direction = 'niższa' if lower else 'wyższa'
-        notes.append(f'W ostatnim badaniu średnia liczba kroków dziennie była {direction} niż przy poprzednim pomiarze kroków.')
-        candidates = ('AK2', 'AK1') if lower else ('AK3',)
-    elif len(notes) < 5:
-        labels = {4:'umiejętności w zadaniach ruchowych', 5:'ruchu na co dzień',
-                  6:'chęci do ruchu i pewności siebie', 7:'wiedzy o ruchu'}
-        available = [idx for idx in labels if recent['levels'][idx] is not None]
-        if available:
-            idx = min(available, key=lambda idx: recent['levels'][idx])
-            domain_level = recent['levels'][idx]
-            notes.append(f'W części dotyczącej {labels[idx]} Twój wynik jest na poziomie „{LEVELS[domain_level]}”.')
-            if candidates[0] == 'OG1' and domain_level < 2:
-                candidates = {4:('RU2', 'RU1') if recent['levels'][0] in (0, 1) else ('RU1',),
-                              5:('AK1',), 6:('MP1', 'MP2'), 7:('WI1', 'WI2')}[idx]
-        elif not overall:
-            notes.append('Na wykresach możesz zobaczyć, jak poszło Ci w poszczególnych zadaniach.')
+    latest_domains = [idx for idx in CHILD_DOMAINS if recent['scores'][idx] is not None
+                      and recent['levels'][idx] is not None]
+    strengths = [idx for idx in latest_domains if recent['levels'][idx] >= 2]
+    needs = [idx for idx in latest_domains if recent['levels'][idx] < 2]
+    target = min(needs, key=lambda idx: recent['levels'][idx]) if needs else None
+    progress = next((idx for idx in (1, 2, 0, 7, 4, 3, 5, 6, 8)
+                     if len(available[idx]) >= 2 and available[idx][-1] is recent
+                     and fmt(recent['scores'][idx]) != fmt(available[idx][-2]['scores'][idx])
+                     and recent['scores'][idx] > available[idx][-2]['scores'][idx]), None)
+    notes = []
+    if progress is not None:
+        achievement = {
+            0: 'w torze ruchowym udało Ci się zdobyć więcej punktów',
+            1: 'w biegu wahadłowym udało Ci się ukończyć więcej odcinków',
+            2: 'w desce udało Ci się dłużej utrzymać pozycję',
+            3: 'w dniach najnowszego pomiaru średnia dzienna liczba kroków była większa',
+            4: 'Twój wynik w zestawie zadań ruchowych wzrósł',
+            5: 'Twój wynik w części o codziennym ruchu wzrósł',
+            6: 'Twój wynik odpowiedzi o chęci do ruchu i pewności siebie wzrósł',
+            7: 'w odpowiedziach na pytania o ruch udało Ci się zdobyć więcej punktów',
+            8: 'Twój wynik ogólny wzrósł',
+        }
+        notes.append(f'Zauważ swój postęp. W porównaniu z poprzednim dostępnym pomiarem {achievement[progress]}.')
+    if strengths:
+        best = max(strengths, key=lambda idx: recent['levels'][idx])
+        notes.append(f'Twoja mocna strona w tym badaniu to obszar „{CHILD_DOMAINS[best][0]}”.')
+    if target is not None:
+        notes.append(f'Jeśli chcesz wybrać jeden obszar do dalszej pracy, zacznij od „{CHILD_DOMAINS[target][0]}”.')
+    if notes:
+        sections.append(('Co warto zapamiętać?', ' '.join(notes)))
+
+    candidates = {
+        4: ('RU2', 'RU1'), 5: ('AK1', 'AK2'), 6: ('MP1', 'MP2'), 7: ('WI1', 'WI2'),
+    }.get(target, ('OG1', 'OG2'))
     options = tuple((item, CHILD[item]) for item in candidates)
     selected = model_choice(options) if use_ai else None
-    return ' '.join(notes), CHILD[selected or candidates[0]]
+    parent = {
+        4: 'Pomóż dziecku wybrać przybory i poziom trudności. Zauważ jedno konkretne wykonanie, które dziecko może powtórzyć.',
+        5: 'Wspólnie wybierzcie porę spaceru lub zabawy. Po niej zapytaj dziecko, co sprawiło mu przyjemność i czy chce to powtórzyć.',
+        6: 'Pozwól dziecku wybrać zabawę i osobę, z którą chce ćwiczyć. Doceń decyzję o podjęciu próby oraz to, co udało się wykonać.',
+        7: 'Poproś dziecko, by opowiedziało, co zauważyło w zabawie. Daj mu czas na własne wyjaśnienie.',
+    }.get(target, 'Zapytaj dziecko, co w raporcie zwróciło jego uwagę. Pomóż mu wybrać jedną zabawę, do której chce wrócić.')
+    return sections, CHILD[selected or candidates[0]], parent
