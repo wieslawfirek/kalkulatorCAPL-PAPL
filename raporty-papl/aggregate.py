@@ -8,12 +8,13 @@ from xml.sax.saxutils import escape
 from reportlab.graphics.shapes import Circle, Drawing, Line, Rect, String
 from reportlab.lib.colors import HexColor, white
 from reportlab.lib.pagesizes import A4
+from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import KeepTogether, LongTable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from individual import register_font
-from branding import BANDS, GREEN, INK, MUTED, RULE, PAPER, report_frame
+from branding import BANDS, GREEN, INK, MUTED, RULE, PAPER, keep_single_letters, report_frame
 from feedback import TEACHER, model_choice
 
 TURNS = {1: 'Pretest', 2: 'Posttest', 3: 'Pomiar po roku'}
@@ -84,10 +85,11 @@ def transitions(records, first, second, metric=8):
 def percent(value, total):
     return f'{100*value/total:.1f}'.replace('.', ',')+'%' if total else '—'
 
-def paragraph(value, size=10, color=INK):
+def paragraph(value, size=10, color=INK, *, justify=False):
     style = ParagraphStyle('PAPL', fontName='PAPL', fontSize=size,
-                           leading=size * 1.3, textColor=color, splitLongWords=True)
-    return Paragraph(escape(value), style)
+                           leading=size * 1.3, textColor=color, splitLongWords=not justify,
+                           alignment=TA_JUSTIFY if justify else TA_LEFT)
+    return Paragraph(escape(keep_single_letters(value) if justify else value), style)
 
 
 def grid(rows, widths, *, card=False, padding=0):
@@ -245,7 +247,7 @@ def progress_items(records, metric, width):
     counts, large_up, large_down, score_up = student_progress(records, metric)
     n = sum(counts)
     if not n:
-        return [paragraph('Brak wyników do porównania u tych samych uczniów.', 9, MUTED)]
+        return [paragraph('Brak wyników do porównania u tych samych uczniów.', 9, MUTED, justify=True)]
     colors = (GREEN, MUTED, HexColor('#A33B34'))
     draw = Drawing(width, 40)
     for i, (label, count, color) in enumerate(zip(('↑ Wyżej', '= Bez zmiany', '↓ Niżej'), counts, colors)):
@@ -264,9 +266,9 @@ def progress_items(records, metric, width):
              'Liczba przejść w górę i w dół jest taka sama.' if counts[0] else
              'Wszyscy porównani uczniowie utrzymali kategorię.')
     items = [draw, paragraph(f'{trend} O ≥2 poziomy: {large_up} wyżej, {large_down} niżej.' if width < 250
-                             else f'{trend} Porównano {n} uczniów. O ≥2 poziomy: {large_up} wyżej i {large_down} niżej.', 9)]
+                             else f'{trend} Porównano {n} uczniów. O ≥2 poziomy: {large_up} wyżej i {large_down} niżej.', 9, justify=True)]
     if score_up and width > 250:
-        items.append(paragraph(f'U {score_up} uczniów wynik punktowy wzrósł w tej samej kategorii.', 9))
+        items.append(paragraph(f'U {score_up} uczniów wynik punktowy wzrósł w tej samej kategorii.', 9, justify=True))
     return items
 
 
@@ -285,7 +287,7 @@ def metric_section(records, turns, metric, series):
         items += [card([paragraph('Kierunek zmian u tych samych uczniów', 13, GREEN),
                         paragraph('Pierwszy i ostatni ważny pomiar każdego ucznia.', 9, MUTED),
                         *progress_items(records, metric, WIDTH-22)], WIDTH), Spacer(1, 7)]
-    items += [paragraph('Słupki pokazują wszystkich uczniów z kategorią PAPL w danym pomiarze. Zmiany udziałów mogą częściowo wynikać ze zmiany składu grupy.', 9, MUTED)]
+    items += [paragraph('Słupki pokazują wszystkich uczniów z kategorią PAPL w danym pomiarze. Zmiany udziałów mogą częściowo wynikać ze zmiany składu grupy.', 9, MUTED, justify=True)]
     return items
 
 
@@ -418,7 +420,7 @@ def aggregate_pdf(records, roster, title, by_class=False, use_ai=True):
         low, high = min(observed), max(observed)
         items += [Spacer(1, 10), paragraph('Najważniejsze wnioski', 12, GREEN),
                   paragraph(f'Największy udział uczniów na poziomie co najmniej „Sprawny” odnotowano w obszarze „{high[1]}”.'
-                            + (f' Najmniejszy udział odnotowano w obszarze „{low[1]}”.' if high[0] != low[0] else ''), 10)]
+                            + (f' Najmniejszy udział odnotowano w obszarze „{low[1]}”.' if high[0] != low[0] else ''), 10, justify=True)]
 
     changes_by_domain = [(values[-1]-values[0], label) for metric, label in METRICS[1:]
                          if len(values := series[metric]) > 1 and values[0] is not None and values[-1] is not None]
@@ -534,8 +536,8 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
     focus = candidates[priority][1] if priority else 'Wybierzcie obszar do obserwacji na podstawie wyników i przebiegu zajęć.'
     if len(turns) > 1 and down > up:
         focus += f' W wyniku ogólnym odnotowano więcej spadków niż awansów kategorii ({down} wobec {up}).'
-    items = [grid([[card([paragraph('Mocne strony', 12, GREEN), Spacer(1, 4), paragraph(strong, 10)], 249),
-                    '', card([paragraph('Do doskonalenia', 12, GREEN), Spacer(1, 4), paragraph(focus, 10)], 249)]],
+    items = [grid([[card([paragraph('Mocne strony', 12, GREEN), Spacer(1, 4), paragraph(strong, 10, justify=True)], 249),
+                    '', card([paragraph('Do doskonalenia', 12, GREEN), Spacer(1, 4), paragraph(focus, 10, justify=True)], 249)]],
                   [249, 13, 249]), Spacer(1, 12), paragraph('Rekomendacje dla nauczyciela', 13, GREEN)]
     order = sorted(candidates, key=lambda item: -candidates[item][0])[:3]
     variant = 2 if by_class else 1
@@ -552,8 +554,8 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
             label = 'Priorytet do pracy · ' + label
         advice = TEACHER[item][variant]
         content = [paragraph(label, 12, GREEN), Spacer(1, 4),
-                   paragraph(candidates[item][1], 9, MUTED), Spacer(1, 4),
-                   paragraph(advice, 10)]
+                   paragraph(candidates[item][1], 9, MUTED, justify=True), Spacer(1, 4),
+                   paragraph(advice, 10, justify=True)]
         if item == material_priority:
             content += [Spacer(1, 6), paragraph('Materiały do wykorzystania', 10, GREEN)]
             for reference, pdf_page in TEACHER_MATERIALS[item]:

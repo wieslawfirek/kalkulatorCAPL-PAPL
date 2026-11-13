@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from reportlab.lib.colors import HexColor, white
@@ -11,6 +12,12 @@ RULE = HexColor('#D7E2DA')
 PAPER = HexColor('#F4F7F4')
 BANDS = tuple(map(HexColor, ('#F2BAAA', '#F4D794', '#A9D7AD', '#68B8A2')))
 LOGOS = (('alfabet.jpg', 42, 115), ('wfz-awf.jpg', 168, 48))
+
+
+_SINGLE_LETTER = re.compile(r"(?<!\w)([aiouwzAIUOWZ]) +(?=\S)")
+
+def keep_single_letters(text):
+    return _SINGLE_LETTER.sub(lambda match: match[1] + "\u00a0", text)
 
 
 def report_frame(canvas, width, height, page):

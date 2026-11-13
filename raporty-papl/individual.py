@@ -3,11 +3,12 @@ import io
 import math
 from pathlib import Path
 from reportlab.lib.colors import white
+from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import Paragraph
 from xml.sax.saxutils import escape
 
-from branding import BANDS, GREEN as TEAL, INK, MUTED, PAPER as PANEL, RULE as BORDER, report_frame
+from branding import BANDS, GREEN as TEAL, INK, MUTED, PAPER as PANEL, RULE as BORDER, keep_single_letters, report_frame
 from feedback import child_feedback
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -152,8 +153,9 @@ def report(records, norms, metrics, use_ai=True):
     header('Co mówią Twoje wyniki?', page)
     y = 142
     for title, value in sections:
-        style = ParagraphStyle('Narracja', fontName='PAPL', fontSize=11, leading=15, textColor=INK)
-        paragraph = Paragraph(escape(value), style)
+        style = ParagraphStyle('Narracja', fontName='PAPL', fontSize=11, leading=15, textColor=INK,
+                               alignment=TA_JUSTIFY, splitLongWords=False)
+        paragraph = Paragraph(escape(keep_single_letters(value)), style)
         _, height = paragraph.wrap(511, H)
         heading_height = 22 if title else 0
         if y + heading_height + height > 788:
