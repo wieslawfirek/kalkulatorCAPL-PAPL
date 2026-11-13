@@ -34,13 +34,13 @@ TEACHER_MATERIALS = {
     'K1': (
         (f'{SCENARIOS}, scenariusz 25 „Wyzwania ruchowe. Łączenie umiejętności”, s. 291.', None),
         (f'{SCENARIOS}, cz. II „Weryfikacja efektów lekcji przez nauczyciela”, s. 361. '
-         'Po wybraniu umiejętności sięgnij po odpowiednią kartę obserwacji.', None),
+         'Karty obserwacji umiejętności ruchowych.', None),
     ),
     'K2': (('Alfabet ruchowy (2024), „Zaangażowanie w całożyciową aktywność fizyczną”, s. 51.', 51),),
     'K3': (
         ('Alfabet ruchowy (2024), „Motywacja i pewność siebie”, s. 25.', 25),
         (f'{SCENARIOS}, „Ocena lekcji przez uczniów”, s. 382. '
-         'Po wypróbowaniu zmiany zbierz krótką opinię uczniów.', None),
+         'Materiał do poznania opinii uczniów o zajęciach.', None),
     ),
     'K4': (('Alfabet ruchowy (2024), „Wiedza i zrozumienie”, s. 41.', 41),),
 }
@@ -311,7 +311,7 @@ def student_tables(records, roster, turns):
             return [paragraph('—', 10, MUTED)], None, None
         score = Decimal(str(row['scores'][metric]))
         level = row['levels'][metric]
-        cells = [paragraph(format(score.normalize(), 'f').replace('.', ','), 10)]
+        cells = [paragraph(format(score, '.1f').replace('.', ','), 10)]
         if level is not None:
             cells.append(paragraph(LEVELS[level], 8.5, MUTED))
         for cell in cells:
@@ -343,7 +343,9 @@ def student_tables(records, roster, turns):
                     change = new_score - old_score
                     sign = (change > 0) - (change < 0)
                     totals[sign] += 1
-                    delta = (('+' if sign > 0 else '') + format(change.normalize(), 'f')).replace('.', ',')
+                    delta = f'{change:+.1f}'.replace('.', ',') if sign else '0,0'
+                    if sign and format(abs(change), '.1f') == '0.0':
+                        delta = '+<0,1' if sign > 0 else '−<0,1'
                     direction, color = directions[sign]
                     status = [paragraph(direction, 10, color)]
                     if old_level is not None and new_level is not None:
@@ -370,7 +372,7 @@ def student_tables(records, roster, turns):
             items += [PageBreak(), paragraph('Indywidualne postępy uczniów', 15, GREEN),
                       Spacer(1, 6),
                       paragraph(f'Zmiany punktowe · ↑ Poprawa {totals[1]} · → Bez zmian {totals[0]} · ↓ Pogorszenie {totals[-1]} · Brak porównania {missing}', 9),
-                      paragraph('Kategoria PAPL jest podana pod punktami, gdy jest dostępna.', 9, MUTED), Spacer(1, 8), table]
+                      paragraph('Kierunek wynika z różnicy przed zaokrągleniem. Kategorię PAPL podano pod wynikiem, gdy jest dostępna.', 9, MUTED), Spacer(1, 8), table]
     return items
 
 
@@ -549,14 +551,6 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
         if item == priority:
             label = 'Priorytet do pracy · ' + label
         advice = TEACHER[item][variant]
-        if item == 'K1':
-            advice = (
-                'Wybierz kilka zadań z toru i zobacz, przy których uczniowie potrzebują pokazu lub łatwiejszej wersji. '
-                'Po kilku lekcjach wróć do wybranego zadania w podobnych warunkach.'
-                if not by_class else
-                'Wybierzcie wspólny zestaw prób dla kilku klas. Po obserwacji uzgodnijcie jedną umiejętność '
-                'do ćwiczenia i kryterium wykonania. Wróćcie do podobnego zadania po kilku lekcjach.'
-            )
         content = [paragraph(label, 12, GREEN), Spacer(1, 4),
                    paragraph(candidates[item][1], 9, MUTED), Spacer(1, 4),
                    paragraph(advice, 10)]
