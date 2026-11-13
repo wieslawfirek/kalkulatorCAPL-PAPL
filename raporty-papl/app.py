@@ -7,8 +7,10 @@ import os
 import base64
 import hmac
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
-from individual import report
+from individual import report, fmt
+from feedback import child_feedback
 from aggregate import aggregate_pdf, group_history, reference_rosters
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -113,8 +115,9 @@ def import_excel(raw):
 def has_results(record):
     return any(value is not None for value in record['scores'])
 
-def individual(history, use_ai=True):
-    return report([record for record in history if has_results(record)], NORMS, METRICS.values(), use_ai=use_ai)
+def individual(history, use_ai=True, feedback_result=None):
+    return report([record for record in history if has_results(record)], NORMS, METRICS.values(),
+                  use_ai=use_ai, feedback_result=feedback_result)
 
 def download_template():
     from openpyxl import Workbook
@@ -238,15 +241,40 @@ class App(BaseHTTPRequestHandler):
             if not selected or mode not in ('school','class','bundle'):
                 raise ValueError('Brak danych dla wybranego zakresu.')
             title = school if mode=='school' else f'{school} · klasa {room}'
-            report_bytes = aggregate_pdf(group_history(records,selected),selected,title,by_class=mode=='school', use_ai=mode!='bundle')
-            if mode!='bundle' or fields.get('preview')=='1':
-                return self.send(report_bytes,'application/pdf',filename='raport-zbiorczy.pdf',inline=True)
+            grouped = group_history(records, selected)
+            if mode != 'bundle' or fields.get('preview') == '1':
+                report_bytes = aggregate_pdf(grouped, selected, title, by_class=mode=='school', use_ai=True)
+                return self.send(report_bytes, 'application/pdf', filename='raport-zbiorczy.pdf', inline=True)
+
+            # Jedno wywołanie GPT na ucznia, wykonywane współbieżnie, a nie szeregowo.
+            # Generowanie PDF jest sekwencyjne (bezpieczne dla wspólnego rejestru czcionek ReportLab).
+            # Raport zbiorczy również korzysta z GPT. Gdy API nie odpowie, każda narracja
+            # niezależnie powróci do wersji deterministycznej.
+            student_rows = [
+                sorted((row for row in history[entry['student']] if has_results(row)),
+                       key=lambda row: row['turn'])
+                for entry in selected
+            ]
+            metric_keys = tuple(METRICS.values())
+            with ThreadPoolExecutor(max_workers=12) as pool:
+                aggregate_future = pool.submit(
+                    aggregate_pdf, grouped, selected, title, by_class=False, use_ai=True)
+                feedback_futures = [
+                    pool.submit(child_feedback, rows, NORMS, metric_keys, fmt, use_ai=True)
+                    for rows in student_rows
+                ]
+                feedback_results = [future.result() for future in feedback_futures]
+                report_bytes = aggregate_future.result()
+
             out = io.BytesIO()
             with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as archive:
                 archive.writestr('raport-klasy.pdf', report_bytes)
-                for i,r in enumerate(selected,1):
-                    safe = re.sub(r'[^A-Za-z0-9_-]','_',r['student'])[:80]
-                    archive.writestr(f'indywidualne/{i:03d}-{safe}.pdf',individual(history[r['student']], use_ai=False))
+                for i, (entry, rows, feedback_result) in enumerate(
+                        zip(selected, student_rows, feedback_results), 1):
+                    safe = re.sub(r'[^A-Za-z0-9_-]','_',entry['student'])[:80]
+                    archive.writestr(
+                        f'indywidualne/{i:03d}-{safe}.pdf',
+                        individual(rows, use_ai=True, feedback_result=feedback_result))
             if out.tell()>4*1024*1024:
                 raise ValueError('Paczka jest za duża. Pobierz raport zbiorczy i raporty uczniów osobno.')
             return self.send(out.getvalue(),'application/zip',filename='raporty-klasy.zip')
