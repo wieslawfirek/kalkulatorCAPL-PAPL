@@ -81,49 +81,53 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
     notes = []
     candidates = ('OG1', 'OG2')
     if recent['scores'][8] is None:
-        notes.append(f'W pomiarze {recent["turn"]} brakuje wyniku ogólnego.')
+        notes.append('W najnowszym badaniu brakuje wyniku łącznego.')
     if overall:
         current = overall[-1]
         level = current['levels'][8]
-        start = f'W pomiarze {current["turn"]} Twój wynik ogólny to {fmt(current["scores"][8])} na 100 punktów'
-        notes.append(start + (f', na poziomie „{LEVELS[level]}”.' if level is not None
-                              else '. Dla tego wyniku nie ustalono poziomu.'))
+        when = 'W najnowszym badaniu' if current is recent else 'We wcześniejszym badaniu'
+        notes.append(f'{when} udało Ci się zdobyć {fmt(current["scores"][8])} na 100 punktów.')
+        if level is not None:
+            notes.append(f'Ten wynik mieści się na poziomie „{LEVELS[level]}”.')
     if len(overall) > 1:
         previous = overall[-2]
-        points = ', '.join(f'{fmt(row["scores"][8])} (pomiar {row["turn"]})' for row in overall)
-        notes.append(f'Twoje wyniki w kolejności to {points}.')
+        points = [fmt(row['scores'][8]) for row in overall]
+        if len(points) == 3:
+            notes.append(f'Twoje wyniki w kolejnych badaniach to {points[0]}, {points[1]} i {points[2]} pkt.')
+        else:
+            notes.append(f'Wcześniejszy wynik to {points[0]} pkt.')
         old_level, new_level = previous['levels'][8], current['levels'][8]
-        if old_level is not None and new_level is not None:
-            if old_level == new_level:
-                notes.append('W dwóch ostatnich pomiarach z wynikiem poziom był taki sam.')
-            else:
-                notes.append(f'Poziom zmienił się z „{LEVELS[old_level]}” na „{LEVELS[new_level]}”.')
-                old_norm = norms.get((previous['sex'], previous['age'], keys[8]))
-                new_norm = norms.get((current['sex'], current['age'], keys[8]))
-                if new_level < old_level and current['scores'][8] > previous['scores'][8]:
-                    candidates = ('MI1',)
-                    if old_norm and new_norm and new_norm[old_level] > old_norm[old_level]:
-                        notes.append('W ostatnim pomiarze do poprzedniego poziomu potrzeba było więcej punktów.')
+        if old_level is not None and new_level is not None and old_level != new_level:
+            previous_direction = 'niższy' if new_level > old_level else 'wyższy'
+            notes.append(f'W poprzednim badaniu z wynikiem łącznym poziom był {previous_direction} („{LEVELS[old_level]}”).')
+            old_norm = norms.get((previous['sex'], previous['age'], keys[8]))
+            new_norm = norms.get((current['sex'], current['age'], keys[8]))
+            if new_level < old_level and current['scores'][8] > previous['scores'][8]:
+                candidates = ('MI1',)
+                if old_norm and new_norm and new_norm[old_level] > old_norm[old_level]:
+                    notes.append('Przybyło Ci punktów, a do osiągnięcia poprzedniego poziomu w ostatnim badaniu potrzeba ich było więcej.')
+        elif old_level is not None and old_level == new_level:
+            notes.append('W dwóch ostatnich badaniach z wynikiem łącznym poziom pozostał ten sam.')
 
     steps = [row for row in records if row['scores'][3] is not None]
     if len(notes) < 5 and len(steps) > 1 and steps[-1] is recent and steps[-1]['scores'][3] != steps[-2]['scores'][3]:
         lower = steps[-1]['scores'][3] < steps[-2]['scores'][3]
         direction = 'niższa' if lower else 'wyższa'
-        notes.append(f'W pomiarze {recent["turn"]} średnia liczba kroków dziennie była {direction} niż w pomiarze {steps[-2]["turn"]}.')
+        notes.append(f'W ostatnim badaniu średnia liczba kroków dziennie była {direction} niż przy poprzednim pomiarze kroków.')
         candidates = ('AK2', 'AK1') if lower else ('AK3',)
     elif len(notes) < 5:
-        labels = {4:'umiejętności w zadaniach ruchowych', 5:'ruch na co dzień',
-                  6:'chęć do ruchu i pewność siebie', 7:'wiedza o ruchu'}
+        labels = {4:'umiejętności w zadaniach ruchowych', 5:'ruchu na co dzień',
+                  6:'chęci do ruchu i pewności siebie', 7:'wiedzy o ruchu'}
         available = [idx for idx in labels if recent['levels'][idx] is not None]
         if available:
             idx = min(available, key=lambda idx: recent['levels'][idx])
             domain_level = recent['levels'][idx]
-            notes.append(f'Twój wynik w obszarze „{labels[idx]}” jest na poziomie „{LEVELS[domain_level]}”.')
+            notes.append(f'W części dotyczącej {labels[idx]} Twój wynik jest na poziomie „{LEVELS[domain_level]}”.')
             if candidates[0] == 'OG1' and domain_level < 2:
                 candidates = {4:('RU2', 'RU1') if recent['levels'][0] in (0, 1) else ('RU1',),
                               5:('AK1',), 6:('MP1', 'MP2'), 7:('WI1', 'WI2')}[idx]
         elif not overall:
-            notes.append('Dostępne wyniki z zadań znajdziesz na wykresach.')
+            notes.append('Na wykresach możesz zobaczyć, jak poszło Ci w poszczególnych zadaniach.')
     options = tuple((item, CHILD[item]) for item in candidates)
     selected = model_choice(options) if use_ai else None
     return ' '.join(notes), CHILD[selected or candidates[0]]
