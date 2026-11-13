@@ -25,6 +25,32 @@ METRICS = (
 )
 WIDTH = 511
 
+GUIDE = ('https://www.awf.edu.pl/__data/assets/pdf_file/0008/60479/'
+         'e-book-Alfabet_ruchowy.-Przewodnik-dla-nauczycieli-i-rodzicow.pdf')
+SCENARIOS = '30 scenariuszy zajęć WF wykorzystujących podstawowe umiejętności ruchowe (2026)'
+TEACHER_MATERIALS = {
+    'K1': (
+        (f'{SCENARIOS}, scenariusz 25 „Wyzwania ruchowe. Łączenie umiejętności”, s. 291.', None),
+        (f'{SCENARIOS}, cz. II „Weryfikacja efektów lekcji przez nauczyciela”, s. 361. '
+         'Po wybraniu umiejętności sięgnij po odpowiednią kartę obserwacji.', None),
+    ),
+    'K2': (('Alfabet ruchowy (2024), „Zaangażowanie w całożyciową aktywność fizyczną”, s. 51.', 51),),
+    'K3': (
+        ('Alfabet ruchowy (2024), „Motywacja i pewność siebie”, s. 25.', 25),
+        (f'{SCENARIOS}, „Ocena lekcji przez uczniów”, s. 382. '
+         'Po wypróbowaniu zmiany zbierz krótką opinię uczniów.', None),
+    ),
+    'K4': (('Alfabet ruchowy (2024), „Wiedza i zrozumienie”, s. 41.', 41),),
+}
+
+
+def material_paragraph(label, pdf_page):
+    if pdf_page is None:
+        return paragraph(label, 9, MUTED)
+    item = paragraph(label, 9, GREEN)
+    return Paragraph(f'<link href="{GUIDE}#page={pdf_page}"><u>{escape(label)}</u></link>', item.style)
+
+
 def reference_rosters(records):
     last = {}
     has_history = set()
@@ -236,6 +262,14 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
             strengths.append((sum(counts[2:])/size, label, sum(counts[2:]), size))
             if low * 2 >= size:
                 candidates[f'K{metric-3}'] = (low/size, f'{label}. Dwie niższe kategorie obejmują {low} z {size} uczniów ({percent(low, size)}).')
+    if 'K1' not in candidates:
+        _, camsa = distribution(records, latest, 0)
+        camsa_n = sum(camsa)
+        camsa_low = sum(camsa[:2])
+        if camsa_n and camsa_low * 2 >= camsa_n:
+            candidates['K1'] = (camsa_low / camsa_n,
+                                f'CAMSA. Dwie niższe kategorie obejmują {camsa_low} z {camsa_n} uczniów '
+                                f'({percent(camsa_low, camsa_n)}).')
     if strengths:
         share, label, high, size = max(strengths)
         if share >= .5:
@@ -280,9 +314,24 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
         order.insert(0, selected)
     if not order:
         items.append(paragraph('Wybierz obszar do dalszej obserwacji na podstawie wykresów i tego, co widzisz na lekcjach.', 10))
+    material_priority = next((item for item in order if item in TEACHER_MATERIALS), None)
     for item in order:
         label, *_ = TEACHER[item]
-        items += [Spacer(1, 6), card([paragraph(label, 12, GREEN), Spacer(1, 4),
-                  paragraph(candidates[item][1], 9, MUTED), Spacer(1, 4),
-                  paragraph(TEACHER[item][variant], 10)], WIDTH)]
+        advice = TEACHER[item][variant]
+        if item == 'K1':
+            advice = (
+                'Wybierz kilka zadań z toru i zobacz, przy których uczniowie potrzebują pokazu lub łatwiejszej wersji. '
+                'Po kilku lekcjach wróć do wybranego zadania w podobnych warunkach.'
+                if not by_class else
+                'Wybierzcie wspólny zestaw prób dla kilku klas. Po obserwacji uzgodnijcie jedną umiejętność '
+                'do ćwiczenia i kryterium wykonania. Wróćcie do podobnego zadania po kilku lekcjach.'
+            )
+        content = [paragraph(label, 12, GREEN), Spacer(1, 4),
+                   paragraph(candidates[item][1], 9, MUTED), Spacer(1, 4),
+                   paragraph(advice, 10)]
+        if item == material_priority:
+            content += [Spacer(1, 6), paragraph('Materiały do wykorzystania', 10, GREEN)]
+            for reference, pdf_page in TEACHER_MATERIALS[item]:
+                content += [Spacer(1, 3), material_paragraph(reference, pdf_page)]
+        items += [Spacer(1, 6), card(content, WIDTH)]
     return items
