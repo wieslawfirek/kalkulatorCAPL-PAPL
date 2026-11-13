@@ -94,10 +94,10 @@ CHILD_DOMAINS = {
 }
 
 CHILD_TRIALS = {
-    0: ('w torze ruchowym', 'pkt'),
-    1: ('w biegu wahadłowym', 'odc.'),
-    2: ('w desce', 's'),
-    3: ('w pomiarze średniej dziennej liczby kroków', 'kroków'),
+    0: ('w torze ruchowym', 'udało Ci się zdobyć więcej punktów'),
+    1: ('w biegu wahadłowym', 'udało Ci się ukończyć więcej odcinków'),
+    2: ('w desce', 'udało Ci się dłużej utrzymać pozycję'),
+    3: ('w pomiarze kroków', 'średnia dzienna liczba kroków wzrosła'),
 }
 
 
@@ -108,16 +108,20 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
         for idx in range(9)
     }
 
-    def trajectory(history, idx, unit='pkt'):
+    def trajectory(history, idx):
         if len(history) < 2:
             return ''
-        values = [fmt(row['scores'][idx]) for row in history]
-        if len(set(values)) == 1:
-            return f' Wynik był taki sam we wszystkich {len(values)} dostępnych pomiarach.'
-        if [row['turn'] for row in history] == list(range(history[0]['turn'], history[-1]['turn'] + 1)):
-            sequence = " i ".join(values) if len(values) == 2 else f"{values[0]}, {values[1]} i {values[2]}"
-            return f' W kolejnych badaniach wyniki to {sequence} {unit}.'
-        return f' W pomiarze {history[0]["turn"]} wynik wyniósł {values[0]} {unit}, a w pomiarze {history[-1]["turn"]} {values[-1]} {unit}.'
+        values = [row['scores'][idx] for row in history]
+        if len(values) == 3:
+            if values[0] < values[1] > values[2]:
+                return ' Wynik najpierw wzrósł, a w ostatnim badaniu był niższy.'
+            if values[0] > values[1] < values[2]:
+                return ' Wynik najpierw się obniżył, a w ostatnim badaniu wzrósł. To krok naprzód!'
+        if values[-1] > values[-2]:
+            return ' W ostatnim dostępnym badaniu wynik się poprawił. To postęp, który warto zauważyć!'
+        if values[-1] < values[-2]:
+            return ' W ostatnim dostępnym badaniu wynik był niższy niż poprzednio.'
+        return ' W dwóch ostatnich dostępnych badaniach wynik pozostał taki sam.'
 
     def category_change(history, idx):
         if len(history) < 2:
@@ -132,7 +136,7 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
 
     def current_result(idx, maximum):
         current = available[idx][-1]
-        when = 'W najnowszym badaniu' if current is recent else f'W pomiarze {current["turn"]}, ostatnim z wynikiem w tej części,'
+        when = 'W najnowszym badaniu' if current is recent else 'W ostatnim badaniu z wynikiem w tej części'
         level = current['levels'][idx]
         text = f'{when} Twój wynik to {fmt(current["scores"][idx])} na {maximum} punktów.'
         if level is not None:
@@ -175,18 +179,18 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
             text += trajectory(history, idx) + category_change(history, idx)
         for trial in trials:
             trial_history = available[trial]
-            last = trial_history[-1]
-            name, unit = CHILD_TRIALS[trial]
-            value = fmt(last['scores'][trial])
-            if trial == 3:
-                text += f' W pomiarze {last["turn"]} średnia dzienna liczba kroków wyniosła {value}.'
+            if len(trial_history) < 2:
+                continue
+            previous, last = trial_history[-2:]
+            name, achievement = CHILD_TRIALS[trial]
+            if last['scores'][trial] > previous['scores'][trial]:
+                text += f' Brawo! W ostatniej dostępnej próbie {name} {achievement}.'
+            elif last['scores'][trial] < previous['scores'][trial]:
+                text += f' W ostatniej dostępnej próbie {name} wynik był niższy niż wcześniej.'
             else:
-                text += f' W pomiarze {last["turn"]} wynik {name} to {value} {unit}.'
-            if len(trial_history) >= 2:
-                previous = trial_history[-2]
-                earlier = fmt(previous['scores'][trial])
-                if value != earlier:
-                    text += f' W pomiarze {previous["turn"]} było to {earlier} {unit}.'
+                text += f' Wynik {name} pozostał taki sam.'
+        if not history and not text:
+            text = 'Kolejna próba pozwoli zobaczyć, jak zmieni się Twój wynik w tej części.'
         if history:
             level = history[-1]['levels'][idx]
             if level == 0:
@@ -222,6 +226,10 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
     if strengths:
         best = max(strengths, key=lambda idx: recent['levels'][idx])
         notes.append(f'Twoja mocna strona w tym badaniu to obszar „{CHILD_DOMAINS[best][0]}”.')
+    if not strengths and latest_domains:
+        best = max(latest_domains, key=lambda idx: recent['levels'][idx])
+        if recent['levels'][best] > min(recent['levels'][idx] for idx in latest_domains):
+            notes.append(f'Wśród ocenionych obszarów najwyższy poziom ma Twój wynik w części „{CHILD_DOMAINS[best][0]}”.')
     if target is not None:
         notes.append(f'Jeśli chcesz wybrać jeden obszar do dalszej pracy, zacznij od „{CHILD_DOMAINS[target][0]}”.')
     if notes:

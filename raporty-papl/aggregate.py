@@ -71,9 +71,9 @@ def distribution(records, turn, metric):
     counts = Counter(row['levels'][metric] for row in available if row['levels'][metric] is not None)
     return len(available), tuple(counts[i] for i in range(4))
 
-def transitions(records, first, second):
+def transitions(records, first, second, metric=8):
     by_turn = {
-        turn:{r['student']:r['levels'][8] for r in records if r['turn']==turn and r['levels'][8] is not None}
+        turn:{r['student']:r['levels'][metric] for r in records if r['turn']==turn and r['levels'][metric] is not None}
         for turn in (first, second)
     }
     start, end = by_turn[first], by_turn[second]
@@ -252,6 +252,7 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
                f'{sum(overall[2:])} z {n} uczniów z kategorią ({percent(sum(overall[2:]), n)}).'
                if n else f'{TURNS[latest]}. Brak kategorii PAPL dla wyniku ogólnego.')
     items = [paragraph(summary, 11), Spacer(1, 7)]
+    domain_directions = []
     candidates = {}
     strengths = []
     for metric, label in METRICS[1:]:
@@ -270,10 +271,6 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
             candidates['K1'] = (camsa_low / camsa_n,
                                 f'CAMSA. Dwie niższe kategorie obejmują {camsa_low} z {camsa_n} uczniów '
                                 f'({percent(camsa_low, camsa_n)}).')
-    if strengths:
-        share, label, high, size = max(strengths)
-        if share >= .5:
-            items += [paragraph(f'Najwyższy odsetek wyników co najmniej „Sprawny” odnotowano w obszarze „{label}” ({high} z {size}, {percent(high, size)}).', 10), Spacer(1, 6)]
     if len(turns) > 1:
         first = turns[-2]
         _, previous = distribution(records, first, 8)
@@ -287,6 +284,28 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
         paired = sum(counts.values())
         if paired:
             items += [paragraph(f'Wśród {paired} uczniów z kategorią w obu pomiarach {up} przeszło wyżej, {paired-up-down} pozostało na tym samym poziomie, a {down} przeszło niżej.', 10), Spacer(1, 6)]
+        if paired:
+            direction = ('Awansów było więcej niż spadków.' if up > down else
+                         'Spadków było więcej niż awansów.' if down > up else
+                         'Liczba awansów i spadków była taka sama.')
+        else:
+            direction = 'Brakuje wyników tych samych uczniów do oceny kierunku zmian.'
+        items[:0] = [paragraph('Kierunek zmian w ostatnim porównaniu', 12, GREEN),
+                     paragraph(direction, 10), Spacer(1, 7)]
+        for metric, label in METRICS[1:]:
+            domain_counts = transitions(records, first, latest, metric)
+            domain_n = sum(domain_counts.values())
+            if not domain_n:
+                continue
+            gained = sum(v for (a, b), v in domain_counts.items() if b > a)
+            lost = sum(v for (a, b), v in domain_counts.items() if b < a)
+            domain_directions.append(f'{label} · wyżej {gained}, bez zmiany {domain_n-gained-lost}, niżej {lost} (n = {domain_n}).')
+            key = f'K{metric-3}'
+            if domain_n >= 5 and lost > gained:
+                _, latest_counts = distribution(records, latest, metric)
+                low_share = sum(latest_counts[:2]) / sum(latest_counts)
+                candidates[key] = (1 + (lost-gained)/domain_n + low_share,
+                                   f'{label}. Wśród {domain_n} uczniów porównanych w obu pomiarach {lost} przeszło niżej, a {gained} wyżej.')
         if paired >= 5 and up > down:
             candidates['K5'] = (.55, f'W porównywanej grupie awanse ({up}) były częstsze niż spadki ({down}).')
         if paired < 5:
@@ -305,18 +324,30 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
             candidates['K7'] = (.58, 'W klasach z co najmniej 10 kategoriami odsetki uczniów na poziomie co najmniej „Sprawny” różnią się o co najmniej 20 pkt proc.')
     if n < 5 or n * 5 < len(roster) * 4:
         candidates['K8'] = (1.1, f'W ostatnim pomiarze kategorię wyniku ogólnego ustalono dla {n} z {len(roster)} uczniów objętych raportem.')
+    if len(turns) == 1:
+        items[:0] = [paragraph('Kierunek zmian można ocenić po kolejnym pomiarze.', 10), Spacer(1, 6)]
+    if domain_directions:
+        items += [paragraph('Zmiany poziomu w obszarach u tych samych uczniów', 11, GREEN)]
+        items += [paragraph(line, 9) for line in domain_directions]
+        items.append(Spacer(1, 7))
+    if strengths:
+        _, label, high, size = max(strengths)
+        items += [paragraph(f'Najmocniejszy wynik grupy · {label}. Poziom co najmniej „Sprawny” osiągnęło {high} z {size} uczniów ({percent(high, size)}).', 10), Spacer(1, 6)]
+    teaching_priorities = [key for key in ('K1', 'K2', 'K3', 'K4') if key in candidates]
+    priority = max(teaching_priorities, key=lambda key: candidates[key][0]) if teaching_priorities else None
     order = sorted(candidates, key=lambda item: -candidates[item][0])[:4]
     variant = 2 if by_class else 1
-    options = tuple((item, TEACHER[item][variant]) for item in order)
+    options = tuple((item, TEACHER[item][variant]) for item in order if item != priority)
     selected = model_choice(options) if use_ai else None
-    if selected in order:
-        order.remove(selected)
-        order.insert(0, selected)
+    leading = [item for item in (priority, selected) if item]
+    order = (leading + [item for item in order if item not in leading])[:4]
     if not order:
         items.append(paragraph('Wybierz obszar do dalszej obserwacji na podstawie wykresów i tego, co widzisz na lekcjach.', 10))
     material_priority = next((item for item in order if item in TEACHER_MATERIALS), None)
     for item in order:
         label, *_ = TEACHER[item]
+        if item == priority:
+            label = 'Priorytet do pracy · ' + label
         advice = TEACHER[item][variant]
         if item == 'K1':
             advice = (
