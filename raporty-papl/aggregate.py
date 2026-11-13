@@ -15,7 +15,8 @@ from reportlab.platypus import KeepTogether, LongTable, PageBreak, Paragraph, Si
 
 from individual import register_font
 from branding import BANDS, GREEN, INK, MUTED, RULE, PAPER, keep_single_letters, report_frame
-from feedback import TEACHER, model_choice
+from feedback import TEACHER
+from ai_narrative import generate_narrative
 
 TURNS = {1: 'Pretest', 2: 'Posttest', 3: 'Pomiar po roku'}
 LEVELS = ('Początkujący', 'Dokonujący postępów', 'Sprawny', 'Wyróżniający się')
@@ -536,15 +537,39 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
     focus = candidates[priority][1] if priority else 'Wybierzcie obszar do obserwacji na podstawie wyników i przebiegu zajęć.'
     if len(turns) > 1 and down > up:
         focus += f' W wyniku ogólnym odnotowano więcej spadków niż awansów kategorii ({down} wobec {up}).'
+    order = sorted(candidates, key=lambda item: -candidates[item][0])[:3]
+    variant = 2 if by_class else 1
+    if use_ai:
+        # Wyłącznie statystyki zagregowane, bez imion, identyfikatorów i danych uczniów.
+        facts = {
+            'liczebnosc_grupy': len(roster),
+            'wynik_ogolny_ostatni_pomiar': dict(zip(LEVELS, overall)),
+            'domeny': [
+                {'nazwa': label, 'kategorie': dict(zip(LEVELS, distribution(records, latest, metric)[1]))}
+                for metric, label in METRICS[1:]
+            ],
+            'mocna_strona_ustalona_z_danych': strong,
+            'obszar_uwagi_ustalony_z_danych': focus,
+            'kierunki': [
+                {'id': key, 'nazwa': TEACHER[key][0], 'uzasadnienie': candidates[key][1],
+                 'podpowiedz': TEACHER[key][variant]}
+                for key in order
+            ],
+            'pomiarow': len(turns),
+        }
+        if len(turns) > 1:
+            facts['porownanie_tych_samych_uczniow'] = {
+                'porownanych': paired, 'awanse_kategorii': up, 'spadki_kategorii': down,
+            }
+        keys = ['strength', 'focus'] + [f'rec_{key}' for key in order]
+        generated = generate_narrative('school' if by_class else 'class', facts, keys, max_chars=560)
+        if generated:
+            strong, focus = generated['strength'], generated['focus']
+    else:
+        generated = None
     items = [grid([[card([paragraph('Mocne strony', 12, GREEN), Spacer(1, 4), paragraph(strong, 10, justify=True)], 249),
                     '', card([paragraph('Do doskonalenia', 12, GREEN), Spacer(1, 4), paragraph(focus, 10, justify=True)], 249)]],
                   [249, 13, 249]), Spacer(1, 12), paragraph('Rekomendacje dla nauczyciela', 13, GREEN)]
-    order = sorted(candidates, key=lambda item: -candidates[item][0])[:3]
-    variant = 2 if by_class else 1
-    options = tuple((item, TEACHER[item][variant]) for item in order if item != priority)
-    selected = model_choice(options) if use_ai else None
-    leading = [item for item in (priority, selected) if item]
-    order = (leading + [item for item in order if item not in leading])[:3]
     if not order:
         items.append(paragraph('Wybierz obszar do dalszej obserwacji na podstawie wykresów i tego, co widzisz na lekcjach.', 10))
     material_priority = next((item for item in order if item in TEACHER_MATERIALS), None)
@@ -552,7 +577,7 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
         label, *_ = TEACHER[item]
         if item == priority:
             label = 'Priorytet do pracy · ' + label
-        advice = TEACHER[item][variant]
+        advice = generated[f'rec_{item}'] if generated else TEACHER[item][variant]
         content = [paragraph(label, 12, GREEN), Spacer(1, 4),
                    paragraph(candidates[item][1], 9, MUTED, justify=True), Spacer(1, 4),
                    paragraph(advice, 10, justify=True)]
