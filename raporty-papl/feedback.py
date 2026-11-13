@@ -2,6 +2,7 @@ import json
 import os
 from functools import lru_cache
 from urllib.request import Request, urlopen
+from ai_narrative import generate_narrative
 
 LEVELS = ('Początkujący', 'Dokonujący postępów', 'Sprawny', 'Wyróżniający się')
 CHILD = {
@@ -240,7 +241,7 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
         4: ('RU2', 'RU1'), 5: ('AK1', 'AK2'), 6: ('MP1', 'MP2'), 7: ('WI1', 'WI2'),
     }.get(target, ('OG1', 'OG2'))
     options = tuple((item, CHILD[item]) for item in candidates)
-    selected = model_choice(options) if use_ai else None
+    selected = None  # Wskazówki awaryjne pozostają deterministyczne.
     focus = {
         4: 'Skup się na jednej umiejętności wybranej wspólnie z dzieckiem. Jeśli wybierze rzut, zacznijcie od miękkiej piłki i bliskiego celu. Po kilku zabawach wróćcie do tego samego zadania i zauważcie, co dziecku wychodzi łatwiej.',
         5: 'Skup się na okazjach do ruchu w zwykłym dniu. Wybierzcie stały moment, na przykład po szkole, oraz aktywność, na którą dziecko ma ochotę. Po tygodniu zapytaj, które dni i zabawy najlepiej pasowały do waszego planu.',
@@ -249,4 +250,27 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
     }.get(target, 'Zapytaj dziecko, co w raporcie zwróciło jego uwagę. Wybierzcie jedną zabawę, do której chce wrócić, i umówcie się, kiedy jej spróbujecie.')
     if progress is not None:
         focus += ' Wróćcie też do postępu wskazanego w części „Co warto zapamiętać?” i nazwijcie razem, co się poprawiło.'
-    return sections, CHILD[selected or candidates[0]], focus
+    advice = CHILD[selected or candidates[0]]
+    if use_ai:
+        # Do usługi trafiają anonimowe opisy wyników, bez nazwiska, szkoły, klasy ani daty urodzenia.
+        narrative_keys = ['overall'] + [f'domain_{idx}' for idx in CHILD_DOMAINS
+                                         if any(title == CHILD_DOMAINS[idx][0] for title, _ in sections)]
+        narrative_keys += ['child_advice', 'parent_advice']
+        facts = {
+            'wyniki_i_zmiany': [{'sekcja': title or 'wynik ogólny', 'dane': body}
+                               for title, body in sections],
+            'obszar_do_wsparcia': CHILD_DOMAINS[target][0] if target is not None else None,
+            'udokumentowany_postep': notes[0] if progress is not None and notes else None,
+            'wskazowki_pomocnicze': {'dla_dziecka': advice, 'dla_rodzica': focus},
+        }
+        generated = generate_narrative('individual', facts, narrative_keys, max_chars=560)
+        if generated:
+            enriched = []
+            for title, body in sections:
+                key = 'overall' if not title else next(
+                    (f'domain_{idx}' for idx in CHILD_DOMAINS if CHILD_DOMAINS[idx][0] == title), None)
+                # Dane liczbowe i kategorie zostają w niezmienionym opisie wyliczonym przez aplikację.
+                enriched.append((title, body + ' ' + generated[key] if key in generated else body))
+            sections = enriched
+            advice, focus = generated['child_advice'], generated['parent_advice']
+    return sections, advice, focus
