@@ -1,25 +1,33 @@
 import io
 from collections import Counter
-
-from reportlab.graphics.shapes import Drawing, Line, Rect, String
-from reportlab.lib.colors import white
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from statistics import mean
 from xml.sax.saxutils import escape
 
-from individual import BANDS, BORDER, INK, MUTED, TEAL, register_font
+from reportlab.graphics.shapes import Drawing, Rect, String
+from reportlab.lib.colors import HexColor, white
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-TURNS = {1:'Pretest',2:'Posttest',3:'Pomiar po roku'}
-LEVELS = ('Początkujący','Dokonujący postępów','Sprawny','Wyróżniający się')
-SHORT = ('P','DP','S','W')
+from individual import register_font
+
+TURNS = {1: 'Pretest', 2: 'Posttest', 3: 'Pomiar po roku'}
+LEVELS = ('Początkujący', 'Dokonujący postępów', 'Sprawny', 'Wyróżniający się')
 METRICS = (
-    (8,'Ogólny wynik alfabetyzacji ruchowej'),
-    (4,'Kompetencje fizyczne'),
-    (5,'Zachowania codzienne'),
-    (6,'Motywacja i pewność siebie'),
-    (7,'Wiedza i zrozumienie'),
+    (8, 'Ogólny wynik alfabetyzacji ruchowej'),
+    (4, 'Kompetencje fizyczne'),
+    (5, 'Zachowania codzienne'),
+    (6, 'Motywacja i pewność siebie'),
+    (7, 'Wiedza i zrozumienie'),
 )
+BANDS = tuple(map(HexColor, ('#F2BAAA', '#F4D794', '#A9D7AD', '#68B8A2')))
+GREEN = HexColor('#174A3A')
+INK = HexColor('#173029')
+MUTED = HexColor('#52655B')
+RULE = HexColor('#D7E2DA')
+PAPER = HexColor('#F4F7F4')
+WIDTH = 511
 
 def reference_rosters(records):
     last = {}
@@ -52,105 +60,172 @@ def transitions(records, first, second):
 def percent(value, total):
     return f'{100*value/total:.1f}'.replace('.', ',')+'%' if total else '—'
 
-def chart(title, records, turns, metric):
-    width = 495
-    height = 42+27*len(turns)
-    draw = Drawing(width,height)
-    def label(x,y,text,size=8,color=INK,anchor='start'):
-        draw.add(String(x,y,text,fontName='PAPL',fontSize=size,fillColor=color,textAnchor=anchor))
-    label(0,height-13,title,11,TEAL)
-    left, span = 115, 368
-    for pct in range(0,101,25):
-        x=left+span*pct/100
-        label(x,height-28,f'{pct}%',7,MUTED,'middle')
-        draw.add(Line(x,3,x,height-32,strokeColor=BORDER,strokeWidth=.4))
-    for i,turn in enumerate(turns):
-        y=height-49-27*i
-        label(0,y+2,TURNS[turn],8)
-        available, counts=distribution(records,turn,metric)
-        n=sum(counts)
-        if n:
-            offset=left
-            for color,count in zip(BANDS,counts):
-                w=span*count/n
-                if count:
-                    draw.add(Rect(offset,y,w,12,fillColor=color,strokeColor=None))
-                    if w>=33:
-                        label(offset+w/2,y+3,percent(count,n),7,INK,'middle')
-                    offset+=w
-        else:
-            label(left+4,y+3,'Brak kategorii PAPL',8,MUTED)
-        details=' · '.join(f'{key} {percent(count,n)}' for key,count in zip(SHORT,counts)) if n else ''
-        counts_text=f'Z kategorią: {n} · Z wynikiem bez kategorii: {available-n}'
-        label(0,y-10,counts_text+(f'   |   {details}' if details else ''),7,MUTED)
+def paragraph(value, size=10, color=INK):
+    style = ParagraphStyle('PAPL', fontName='PAPL', fontSize=size,
+                           leading=size * 1.3, textColor=color, splitLongWords=True)
+    return Paragraph(escape(value), style)
+
+
+def grid(rows, widths, *, card=False, padding=0):
+    table = Table(rows, colWidths=widths, hAlign='LEFT')
+    commands = [
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), padding),
+        ('RIGHTPADDING', (0, 0), (-1, -1), padding),
+        ('TOPPADDING', (0, 0), (-1, -1), padding),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), padding),
+    ]
+    if card:
+        commands += [('BACKGROUND', (0, 0), (-1, -1), white),
+                     ('BOX', (0, 0), (-1, -1), 0.6, RULE)]
+    table.setStyle(TableStyle(commands))
+    return table
+
+
+def card(items, width):
+    return grid([[items]], [width], card=True, padding=11)
+
+
+def legend():
+    draw = Drawing(WIDTH, 22)
+    x = 0
+    for level, color in zip(LEVELS, BANDS):
+        draw.add(Rect(x, 6, 10, 10, fillColor=color, strokeColor=None))
+        draw.add(String(x + 15, 7, level, fontName='PAPL', fontSize=9, fillColor=INK))
+        x += 29 + stringWidth(level, 'PAPL', 9)
     return draw
+
+
+def distribution_row(label, available, counts, width):
+    n = sum(counts)
+    narrow = width < 250
+    shift = 11 if narrow else 0
+    draw = Drawing(width, 52 + shift)
+    draw.add(Rect(0, 17 + shift, width, 17, fillColor=PAPER, strokeColor=None))
+    if n:
+        x = 0
+        for count, color in zip(counts, BANDS):
+            segment = width * count / n
+            if count:
+                draw.add(Rect(x, 17 + shift, segment, 17, fillColor=color, strokeColor=None))
+                value = percent(count, n)
+                if segment >= stringWidth(value, 'PAPL', 8) + 6:
+                    draw.add(String(x + segment / 2, 23 + shift, value, textAnchor='middle',
+                                    fontName='PAPL', fontSize=8, fillColor=INK))
+            x += segment
+        details = '  /  '.join(percent(count, n) for count in counts)
+        benchmark = f'Co najmniej sprawny {percent(sum(counts[2:]), n)}'
+        if narrow:
+            draw.add(String(0, 5, benchmark, fontName='PAPL', fontSize=8, fillColor=MUTED))
+        else:
+            details += '   ·   ' + benchmark
+    else:
+        details = 'Brak kategorii PAPL w tym pomiarze'
+    draw.add(String(0, 5 + shift, details, fontName='PAPL', fontSize=8, fillColor=MUTED))
+    sample = f'n = {n}' + (f' · bez kategorii {available - n}' if available > n else '')
+    draw.add(String(width, 39 + shift, sample, textAnchor='end', fontName='PAPL', fontSize=8, fillColor=MUTED))
+    label_width = width - stringWidth(sample, 'PAPL', 8) - 8
+    short_label = label
+    while short_label and stringWidth(short_label + ('…' if short_label != label else ''), 'PAPL', 9) > label_width:
+        short_label = short_label[:-1]
+    if short_label != label:
+        short_label += '…'
+    draw.add(String(0, 39 + shift, short_label, fontName='PAPL', fontSize=9, fillColor=INK))
+    return draw
+
+
+def charts(records, turns, metric, width):
+    return [distribution_row(TURNS[turn], *distribution(records, turn, metric), width)
+            for turn in turns]
+
+
+def changes(records, turns):
+    items = [paragraph('Zmiana poziomu u tych samych uczniów', 13, GREEN), Spacer(1, 5)]
+    comparable = [turn for turn in turns if sum(distribution(records, turn, 8)[1])]
+    if len(comparable) < 2:
+        items.append(paragraph('Porównanie wymaga kategorii w co najmniej dwóch pomiarach.', 9, MUTED))
+    for first, second in zip(comparable, comparable[1:]):
+        counts = transitions(records, first, second)
+        n = sum(counts.values())
+        up = sum(value for (start, end), value in counts.items() if end > start)
+        down = sum(value for (start, end), value in counts.items() if end < start)
+        items.append(paragraph(f'{TURNS[first]} → {TURNS[second]} · n = {n}', 10))
+        if n:
+            items.append(paragraph(f'Awans {up} · Bez zmiany {n - up - down} · Spadek {down}', 9, MUTED))
+        else:
+            items.append(paragraph('Brak uczniów z kategorią w obu pomiarach.', 9, MUTED))
+        items.append(Spacer(1, 6))
+    return items
+
 
 def aggregate_pdf(records, roster, title, by_class=False):
     register_font()
-    styles=getSampleStyleSheet()
-    for style in ('Title','Heading2','Normal'):
-        styles[style].fontName='PAPL'
-        styles[style].textColor=INK
-    styles['Normal'].leading=13
-    items=[]
-    out=io.BytesIO()
-    reference=roster[0]['turn']
-    all_turns=sorted({r['turn'] for r in records if any(v is not None for v in r['scores'])})
-    def paragraph(value,style='Normal'):
-        return Paragraph(escape(value),styles[style])
-    def distributions_page(heading, history, size):
-        items.extend([paragraph(heading,'Title'),
-                      paragraph(f'Skład według pomiaru: {TURNS[reference]} · {size} uczniów z wynikiem w co najmniej jednej turze'),
-                      paragraph('Każdy słupek pokazuje odsetki wśród uczniów z kategorią PAPL w danej turze.'),
-                      Spacer(1,6),
-                      paragraph(' · '.join(f'{s} – {l}' for s,l in zip(SHORT,LEVELS)))])
-        for metric,label in METRICS:
-            items.append(chart(label,history,all_turns,metric))
-    distributions_page(title,records,len(roster))
-    overall_turns=[turn for turn in all_turns if sum(distribution(records,turn,8)[1])]
-    if len(all_turns)>1:
-        items.extend([PageBreak(),paragraph('Przejścia między kategoriami PAPL','Title'),
-                      paragraph(title),paragraph('Wynik ogólny. Porównanie obejmuje uczniów z kategorią w obu turach, połączonych według identyfikatora.')])
-        if len(overall_turns)<2:
-            items.append(paragraph('Brak dwóch tur z dostępnymi kategoriami wyniku ogólnego.'))
-        for first,second in zip(overall_turns,overall_turns[1:]):
-            counts=transitions(records,first,second)
-            n=sum(counts.values())
-            items.append(paragraph(f'{TURNS[first]} → {TURNS[second]}','Heading2'))
-            if not n:
-                items.append(paragraph('Brak uczniów z kategorią w obu turach.'))
-                continue
-            up=sum(value for (a,b),value in counts.items() if b>a)
-            down=sum(value for (a,b),value in counts.items() if b<a)
-            items.append(paragraph(f'Pary: {n} · Wyżej: {percent(up,n)} · Bez zmiany: {percent(n-up-down,n)} · Niżej: {percent(down,n)}'))
-            items.append(Spacer(1,6))
-            rows=[['Z kategorii / do kategorii',*SHORT],*[[SHORT[a],*[counts[a,b] for b in range(4)]] for a in range(4)]]
-            table=Table(rows,colWidths=[167,82,82,82,82],hAlign='LEFT')
-            styles_table=[('FONTNAME',(0,0),(-1,-1),'PAPL'),('FONTSIZE',(0,0),(-1,-1),8),
-                          ('BACKGROUND',(0,0),(-1,0),BORDER),('BACKGROUND',(0,1),(0,-1),BORDER),
-                          ('ALIGN',(1,0),(-1,-1),'CENTER'),('GRID',(0,0),(-1,-1),.5,white),
-                          ('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]
-            for a in range(4):
-                for b in range(4):
-                    if counts[a,b]:
-                        styles_table.append(('BACKGROUND',(b+1,a+1),(b+1,a+1),BANDS[2 if b>a else 1 if b<a else 0]))
-            table.setStyle(TableStyle(styles_table))
-            items.append(table)
-        items.append(Spacer(1,10))
-        items.append(paragraph('Kategorie w każdej turze ustalono według wieku w dniu testu i płci. Przejście między kategoriami może odzwierciedlać zmianę wyniku lub progu wieku.'))
+    out = io.BytesIO()
+    reference = roster[0]['turn']
+    turns = sorted({row['turn'] for row in records if any(v is not None for v in row['scores'])})
+    scope = 'Raport szkolny' if by_class else 'Raport klasowy'
+
+    def heading(label):
+        return [paragraph(scope.upper(), 9, GREEN), Spacer(1, 5), paragraph(title, 21),
+                paragraph(label, 14, GREEN), Spacer(1, 9)]
+
+    items = heading('Wynik ogólny alfabetyzacji ruchowej')
+    items += [paragraph(f'Skład grupy według pomiaru „{TURNS[reference]}” · {len(roster)} uczniów z wynikiem', 9, MUTED),
+              Spacer(1, 6), legend()]
+    distribution_card = card([paragraph('Rozkład poziomów', 13, GREEN), Spacer(1, 5),
+                              *charts(records, turns, 8, 316)], 338)
+    score_items = [paragraph('Średni wynik', 13, GREEN), Spacer(1, 5)]
+    for turn in turns:
+        values = [row['scores'][8] for row in records if row['turn'] == turn and row['scores'][8] is not None]
+        result = f'{mean(values):.1f}'.replace('.', ',') + ' pkt' if values else 'Brak wyniku'
+        score_items += [paragraph(f'{TURNS[turn]} · n = {len(values)}', 8, MUTED),
+                        paragraph(result, 13), Spacer(1, 7)]
+    items += [grid([[distribution_card, '', card(score_items, 161)]], [338, 12, 161]), Spacer(1, 10),
+              card(changes(records, turns), WIDTH), Spacer(1, 7),
+              paragraph('Słupki obejmują uczniów z kategorią PAPL. Średnie uwzględniają wszystkie dostępne wyniki ogólne. Kategorie zależą od wieku w dniu testu i płci.', 8, MUTED)]
+
+    comparison = []
     if by_class:
-        for room in sorted({r['classroom'] for r in roster}):
-            members=[r for r in roster if r['classroom']==room]
-            items.append(PageBreak())
-            distributions_page(f'{title} · klasa {room}',group_history(records,members),len(members))
-    if len(all_turns)==1 and not by_class:
-        items.append(paragraph('Dostępny jest jeden pomiar. Porównanie zmian wymaga wyników z kolejnej tury.'))
-    def page(canvas,doc):
-        canvas.setFillColor(TEAL)
-        canvas.rect(0,A4[1]-7,A4[0],7,fill=1,stroke=0)
-        canvas.setFont('PAPL',8)
-        canvas.drawString(44,26,'CAPL-2 · polskie normy PAPL')
-        canvas.drawRightString(551,26,str(doc.page))
-    SimpleDocTemplate(out,pagesize=A4,leftMargin=44,rightMargin=44,topMargin=36,bottomMargin=39).build(
-        items,onFirstPage=page,onLaterPages=page)
+        classes = sorted({row['classroom'] for row in roster})
+        by_student = {row['student']: row['classroom'] for row in roster}
+        latest = {room: [] for room in classes}
+        for row in records:
+            if row['turn'] == turns[-1]:
+                latest[by_student[row['student']]].append(row)
+        for room in classes:
+            comparison.append(distribution_row(f'Klasa {room}', *distribution(latest[room], turns[-1], 8), WIDTH - 22))
+        if len(comparison) <= 4 and len(title) <= 75:
+            items += [Spacer(1, 10), card([paragraph(f'Porównanie klas · {TURNS[turns[-1]]}', 13, GREEN),
+                                         Spacer(1, 5), *comparison], WIDTH)]
+            comparison = []
+
+    items += [PageBreak(), *heading('Cztery obszary alfabetyzacji ruchowej'), legend()]
+    panels = [card([paragraph(label, 12, GREEN), Spacer(1, 8), *charts(records, turns, metric, 227)], 249)
+              for metric, label in METRICS[1:]]
+    items += [grid([[panels[0], '', panels[1]]], [249, 13, 249]), Spacer(1, 13),
+              grid([[panels[2], '', panels[3]]], [249, 13, 249]), Spacer(1, 10),
+              paragraph('Kolejność wartości pod słupkami odpowiada legendzie. n oznacza liczbę uczniów z kategorią PAPL w danym pomiarze i obszarze.', 8, MUTED)]
+
+    if comparison:
+        items += [PageBreak(), *heading(f'Porównanie klas · {TURNS[turns[-1]]}'), legend()]
+        items += [KeepTogether([card([row], WIDTH), Spacer(1, 3)]) for row in comparison]
+
+    def decorate(canvas, doc):
+        width, height = A4
+        canvas.setFillColor(PAPER)
+        canvas.rect(0, 0, width, height, fill=1, stroke=0)
+        canvas.setFillColor(GREEN)
+        canvas.rect(0, height - 47, width, 47, fill=1, stroke=0)
+        canvas.setFont('PAPL', 13)
+        canvas.setFillColor(white)
+        canvas.drawString(42, height - 29, 'RAPORTY · CAPL')
+        canvas.setFont('PAPL', 9)
+        canvas.drawRightString(width - 42, height - 28, 'Polskie normy PAPL')
+        canvas.setFillColor(MUTED)
+        canvas.drawString(42, 24, 'Ocena alfabetyzacji ruchowej')
+        canvas.drawRightString(width - 42, 24, str(doc.page))
+
+    SimpleDocTemplate(out, pagesize=A4, leftMargin=36, rightMargin=36,
+                      topMargin=56, bottomMargin=38).build(
+        items, onFirstPage=decorate, onLaterPages=decorate)
     return out.getvalue()
