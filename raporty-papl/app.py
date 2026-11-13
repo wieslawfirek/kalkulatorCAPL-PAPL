@@ -100,6 +100,7 @@ def import_excel(raw):
                     raise ValueError(f'Wiersz {i}: data testu poprzedza datę urodzenia.')
                 age = test.year - birth.year - ((test.month, test.day) < (birth.month, birth.day))
             records.append(dict(student=student, name=' '.join(str(v).strip() for v in (first, last) if v) or student,
+                surname=str(last).strip() if last is not None else '', given_name=str(first).strip() if first is not None else '',
                 sex=int(sex) if sex else None, age=age, test=test if isinstance(test, date) else None, school=school, classroom=classroom, turn=turn,
                 scores=scores, levels=[category(int(sex) if sex else None, age, m, v)
                                       for m, v in zip(METRICS.values(), scores)]))

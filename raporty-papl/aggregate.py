@@ -1,5 +1,7 @@
 import io
 from collections import Counter
+from decimal import Decimal
+from unicodedata import normalize
 from statistics import mean
 from xml.sax.saxutils import escape
 
@@ -8,7 +10,7 @@ from reportlab.lib.colors import HexColor, white
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfbase.pdfmetrics import stringWidth
-from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, LongTable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from individual import register_font
 from branding import BANDS, GREEN, INK, MUTED, RULE, PAPER, report_frame
@@ -287,6 +289,91 @@ def metric_section(records, turns, metric, series):
     return items
 
 
+def student_tables(records, roster, turns):
+    recent_turns = turns[-2:]
+    last = recent_turns[-1]
+    previous = recent_turns[0] if len(recent_turns) == 2 else None
+    history = {(row['student'], row['turn']): row for row in records if row['turn'] in recent_turns}
+    classes = {}
+    for row in roster:
+        classes.setdefault(row['classroom'], []).append(row)
+    red = HexColor('#A33B34')
+    directions = {1: ('↑ Poprawa', GREEN), 0: ('→ Bez zmian', MUTED), -1: ('↓ Pogorszenie', red)}
+
+    def sort_key(row):
+        def polish(value):
+            return tuple((normalize('NFD', char)[0] if char != 'ł' else 'l', char != normalize('NFD', char)[0] or char == 'ł', char)
+                         for char in value.casefold())
+        return (polish(row.get('surname') or row['name']), polish(row.get('given_name', '')), row['student'])
+
+    def measurement(row, metric):
+        if row is None or row['scores'][metric] is None:
+            return [paragraph('—', 10, MUTED)], None, None
+        score = Decimal(str(row['scores'][metric]))
+        level = row['levels'][metric]
+        cells = [paragraph(format(score.normalize(), 'f').replace('.', ','), 10)]
+        if level is not None:
+            cells.append(paragraph(LEVELS[level], 8.5, MUTED))
+        for cell in cells:
+            cell.style.alignment = 2
+        return cells, score, level
+
+    def period(members, turn):
+        dates = sorted({row['test'].strftime('%Y-%m-%d') for member in members
+                        if (row := history.get((member['student'], turn))) and row.get('test')})
+        if not dates:
+            return 'brak dat w arkuszu' if turn is not None else '—'
+        return dates[0] if len(dates) == 1 else f'{dates[0]} – {dates[-1]}'
+
+    items = []
+    for room, members in sorted(classes.items()):
+        members = sorted(members, key=sort_key)
+        for metric, label in METRICS:
+            rows = [[paragraph(v, 9, GREEN) for v in
+                     ('Nazwisko i imię', 'Poprzedni pomiar', 'Ostatni pomiar', 'Zmiana (pkt)', 'Kierunek')]]
+            totals = Counter()
+            for member in members:
+                student = member['student']
+                name = ' '.join(filter(None, (member.get('surname'), member.get('given_name')))) or member['name']
+                earlier, old_score, old_level = measurement(history.get((student, previous)), metric)
+                current, new_score, new_level = measurement(history.get((student, last)), metric)
+                delta = '—'
+                status = [paragraph('Brak porównania', 9, MUTED)]
+                if old_score is not None and new_score is not None:
+                    change = new_score - old_score
+                    sign = (change > 0) - (change < 0)
+                    totals[sign] += 1
+                    delta = (('+' if sign > 0 else '') + format(change.normalize(), 'f')).replace('.', ',')
+                    direction, color = directions[sign]
+                    status = [paragraph(direction, 10, color)]
+                    if old_level is not None and new_level is not None:
+                        category = ('↑ Kategoria wyższa' if new_level > old_level else
+                                    '↓ Kategoria niższa' if new_level < old_level else 'Kategoria bez zmian')
+                        status.append(paragraph(category, 8.5, MUTED))
+                delta_cell = paragraph(delta, 10)
+                delta_cell.style.alignment = 2
+                rows.append([paragraph(name, 10), earlier, current, delta_cell, status])
+            context = paragraph(f'Klasa {room} · {label} · {len(members)} uczniów', 11, GREEN)
+            dates = paragraph(f'Poprzedni pomiar: {period(members, previous)} · Ostatni pomiar: {period(members, last)}', 9)
+            table = LongTable([[context, '', '', '', ''], [dates, '', '', '', ''], *rows],
+                              colWidths=[149, 86, 86, 67, 123], repeatRows=3, splitInRow=0, hAlign='LEFT')
+            table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('SPAN', (0, 0), (-1, 0)), ('SPAN', (0, 1), (-1, 1)),
+                ('BACKGROUND', (0, 2), (-1, 2), RULE),
+                ('ROWBACKGROUNDS', (0, 3), (-1, -1), [white, PAPER]),
+                ('LINEBELOW', (0, 0), (-1, -1), .3, RULE),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            missing = len(members) - sum(totals.values())
+            items += [PageBreak(), paragraph('Indywidualne postępy uczniów', 15, GREEN),
+                      Spacer(1, 6),
+                      paragraph(f'Zmiany punktowe · ↑ Poprawa {totals[1]} · → Bez zmian {totals[0]} · ↓ Pogorszenie {totals[-1]} · Brak porównania {missing}', 9),
+                      paragraph('Kategoria PAPL jest podana pod punktami, gdy jest dostępna.', 9, MUTED), Spacer(1, 8), table]
+    return items
+
+
 def aggregate_pdf(records, roster, title, by_class=False, use_ai=True):
     register_font()
     out = io.BytesIO()
@@ -362,7 +449,8 @@ def aggregate_pdf(records, roster, title, by_class=False, use_ai=True):
         items += [KeepTogether([card([row], WIDTH), Spacer(1, 3)]) for row in comparison]
 
     items += [PageBreak(), *heading('Co wyniki podpowiadają do dalszej pracy?'),
-              *teacher_feedback(records, roster, turns, by_class, use_ai)]
+              *teacher_feedback(records, roster, turns, by_class, use_ai),
+              *student_tables(records, roster, turns)]
 
     def decorate(canvas, doc):
         report_frame(canvas, *A4, doc.page)
@@ -377,11 +465,6 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
     latest = turns[-1]
     _, overall = distribution(records, latest, 8)
     n = sum(overall)
-    summary = (f'{TURNS[latest]}. Poziom co najmniej „Sprawny” w wyniku ogólnym osiągnęło '
-               f'{sum(overall[2:])} z {n} uczniów z kategorią ({percent(sum(overall[2:]), n)}).'
-               if n else f'{TURNS[latest]}. Brak kategorii PAPL dla wyniku ogólnego.')
-    items = [paragraph(summary, 11), Spacer(1, 7)]
-    domain_directions = {}
     candidates = {}
     strengths = []
     for metric, label in METRICS[1:]:
@@ -402,25 +485,10 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
                                 f'({percent(camsa_low, camsa_n)}).')
     if len(turns) > 1:
         first = turns[-2]
-        _, previous = distribution(records, first, 8)
-        if n and sum(previous):
-            difference = 100 * (sum(overall[2:])/n - sum(previous[2:])/sum(previous))
-            difference_text = f'{difference:+.1f}'.replace('.', ',')
-            items += [paragraph(f'{TURNS[first]} → {TURNS[latest]}. Zmiana udziału na poziomie co najmniej „Sprawny” wynosi {difference_text} pkt proc. (n = {sum(previous)} i {n}).', 10), Spacer(1, 6)]
         counts = transitions(records, first, latest)
-        up = sum(v for (a,b),v in counts.items() if b>a)
-        down = sum(v for (a,b),v in counts.items() if b<a)
+        up = sum(v for (a, b), v in counts.items() if b > a)
+        down = sum(v for (a, b), v in counts.items() if b < a)
         paired = sum(counts.values())
-        if paired:
-            items += [paragraph(f'Wśród {paired} uczniów z kategorią w obu pomiarach {up} przeszło wyżej, {paired-up-down} pozostało na tym samym poziomie, a {down} przeszło niżej.', 10), Spacer(1, 6)]
-        if paired:
-            direction = ('Awansów było więcej niż spadków.' if up > down else
-                         'Spadków było więcej niż awansów.' if down > up else
-                         'Liczba awansów i spadków była taka sama.')
-        else:
-            direction = 'Brakuje wyników tych samych uczniów do oceny kierunku zmian.'
-        items[:0] = [paragraph('Kierunek zmian w ostatnim porównaniu', 12, GREEN),
-                     paragraph(direction, 10), Spacer(1, 7)]
         for metric, label in METRICS[1:]:
             domain_counts = transitions(records, first, latest, metric)
             domain_n = sum(domain_counts.values())
@@ -428,7 +496,6 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
                 continue
             gained = sum(v for (a, b), v in domain_counts.items() if b > a)
             lost = sum(v for (a, b), v in domain_counts.items() if b < a)
-            domain_directions[metric] = (domain_n, gained, lost)
             key = f'K{metric-3}'
             if domain_n >= 5 and lost > gained:
                 _, latest_counts = distribution(records, latest, metric)
@@ -453,58 +520,27 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
             candidates['K7'] = (.58, 'W klasach z co najmniej 10 kategoriami odsetki uczniów na poziomie co najmniej „Sprawny” różnią się o co najmniej 20 pkt proc.')
     if n < 5 or n * 5 < len(roster) * 4:
         candidates['K8'] = (1.1, f'W ostatnim pomiarze kategorię wyniku ogólnego ustalono dla {n} z {len(roster)} uczniów objętych raportem.')
-    if len(turns) == 1:
-        items[:0] = [paragraph('Kierunek zmian można ocenić po kolejnym pomiarze.', 10), Spacer(1, 6)]
-    if strengths:
-        _, label, high, size = max(strengths)
-        items += [paragraph(f'Najmocniejszy obszar grupy w ostatnim pomiarze to „{label}”. Poziom co najmniej „Sprawny” osiągnęło w nim {high} z {size} uczniów ({percent(high, size)}).', 11), Spacer(1, 8)]
-    domain_context = {
-        4: 'Ten obszar pokazuje, jak uczniowie radzą sobie w zadaniach ruchowych.',
-        5: 'Wynik dotyczy codziennych zachowań związanych z ruchem.',
-        6: 'Wynik opiera się na odpowiedziach uczniów o ich doświadczeniach z ruchem.',
-        7: 'W tym obszarze oceniane są odpowiedzi na pytania dotyczące ruchu.',
-    }
-    items += [paragraph('Jak zmieniały się poszczególne obszary?', 12, GREEN), Spacer(1, 4)]
-    for metric, label in METRICS[1:]:
-        _, levels = distribution(records, latest, metric)
-        size = sum(levels)
-        if not size and metric not in domain_directions:
-            continue
-        description = domain_context[metric]
-        if size:
-            high = sum(levels[2:])
-            description += f' W ostatnim pomiarze {high} z {size} uczniów z kategorią osiągnęło poziom co najmniej „Sprawny”.'
-        if metric in domain_directions:
-            paired_n, gained, lost = domain_directions[metric]
-            if gained > lost:
-                trend = 'W tej grupie przeważyły przejścia na wyższy poziom.'
-            elif lost > gained:
-                trend = 'W tej grupie częstsze były przejścia na niższy poziom.'
-            elif gained:
-                trend = 'Tyle samo uczniów przeszło na wyższy i na niższy poziom.'
-            else:
-                trend = 'Wszyscy porównani uczniowie utrzymali poziom.'
-            description += (f' Wśród {paired_n} tych samych uczniów {gained} przeszło wyżej, '
-                            f'{paired_n-gained-lost} utrzymało poziom, a {lost} przeszło niżej. {trend}')
-        elif len(turns) > 1:
-            description += ' Brakuje par wyników do oceny kierunku zmian w tym obszarze.'
-        within = student_progress(records, metric)[3]
-        if within:
-            description += f' U {within} uczniów wynik punktowy wzrósł w tej samej kategorii między pierwszym i ostatnim ważnym pomiarem.'
-        items.append(KeepTogether([paragraph(label, 11, GREEN), paragraph(description, 10), Spacer(1, 8)]))
     teaching_priorities = [key for key in ('K1', 'K2', 'K3', 'K4') if key in candidates]
     priority = max(teaching_priorities, key=lambda key: candidates[key][0]) if teaching_priorities else None
-    if priority:
-        items += [paragraph('Na czym się skupić?', 12, GREEN),
-                  paragraph(f'Proponowany punkt wyjścia to „{TEACHER[priority][0]}”. '
-                            f'{candidates[priority][1]} Poniżej znajdziesz działanie do wypróbowania '
-                            'i sposób sprawdzenia, czy pomaga uczniom.', 10), Spacer(1, 7)]
-    order = sorted(candidates, key=lambda item: -candidates[item][0])[:4]
+    strong = 'Brak danych o poziomach w domenach w ostatnim pomiarze.'
+    if strengths:
+        _, label, high, size = max(strengths)
+        strong = (f'Najwyższy odsetek na poziomie co najmniej „Sprawny” odnotowano w obszarze „{label}” ({high} z {size}).'
+                  if high else 'W dostępnych domenach warto poszukać postępów poszczególnych uczniów w tabelach wyników.')
+    if len(turns) > 1 and up > down:
+        strong += f' W wyniku ogólnym odnotowano więcej awansów niż spadków kategorii ({up} wobec {down}).'
+    focus = candidates[priority][1] if priority else 'Wybierzcie obszar do obserwacji na podstawie wyników i przebiegu zajęć.'
+    if len(turns) > 1 and down > up:
+        focus += f' W wyniku ogólnym odnotowano więcej spadków niż awansów kategorii ({down} wobec {up}).'
+    items = [grid([[card([paragraph('Mocne strony', 12, GREEN), Spacer(1, 4), paragraph(strong, 10)], 249),
+                    '', card([paragraph('Do doskonalenia', 12, GREEN), Spacer(1, 4), paragraph(focus, 10)], 249)]],
+                  [249, 13, 249]), Spacer(1, 12), paragraph('Rekomendacje dla nauczyciela', 13, GREEN)]
+    order = sorted(candidates, key=lambda item: -candidates[item][0])[:3]
     variant = 2 if by_class else 1
     options = tuple((item, TEACHER[item][variant]) for item in order if item != priority)
     selected = model_choice(options) if use_ai else None
     leading = [item for item in (priority, selected) if item]
-    order = (leading + [item for item in order if item not in leading])[:4]
+    order = (leading + [item for item in order if item not in leading])[:3]
     if not order:
         items.append(paragraph('Wybierz obszar do dalszej obserwacji na podstawie wykresów i tego, co widzisz na lekcjach.', 10))
     material_priority = next((item for item in order if item in TEACHER_MATERIALS), None)
