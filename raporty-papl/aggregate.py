@@ -268,19 +268,23 @@ def progress_items(records, metric, width):
     return items
 
 
-def domain_profile(series_by_metric):
-    rows = []
-    for metric, label in METRICS[1:]:
-        series = series_by_metric[metric]
-        value = series[-1]
-        draw = Drawing(188, 14)
-        draw.add(Rect(0, 3, 188, 8, fillColor=RULE, strokeColor=None))
-        if value:
-            draw.add(Rect(0, 3, 188*value, 8, fillColor=GREEN, strokeColor=None))
-        rows.append([paragraph(label, 9), draw,
-                     paragraph(f'{100*value:.1f}%'.replace('.', ',') if value is not None else 'Brak danych', 9),
-                     paragraph(delta_text(series) if len(series)>1 else '', 9)])
-    return grid(rows, [177, 198, 66, 70])
+def metric_section(records, turns, metric, series):
+    distribution_card = card([paragraph('Rozkład poziomów', 13, GREEN), Spacer(1, 5),
+                              *charts(records, turns, metric, 316)], 338)
+    score_items = [paragraph('Co najmniej sprawni', 12, GREEN), proficiency_chart(series, 139),
+                   paragraph('Średni wynik', 11, GREEN), Spacer(1, 4)]
+    for turn in turns:
+        values = [row['scores'][metric] for row in records if row['turn'] == turn and row['scores'][metric] is not None]
+        result = f'{mean(values):.1f}'.replace('.', ',') + ' pkt' if values else 'Brak wyniku'
+        score_items += [paragraph(f'{turn_label(turns, turn)} · n = {len(values)}', 8, MUTED),
+                        paragraph(result, 13), Spacer(1, 7)]
+    items = [grid([[distribution_card, '', card(score_items, 161)]], [338, 12, 161]), Spacer(1, 10)]
+    if len(turns) > 1:
+        items += [card([paragraph('Kierunek zmian u tych samych uczniów', 13, GREEN),
+                        paragraph('Pierwszy i ostatni ważny pomiar każdego ucznia.', 9, MUTED),
+                        *progress_items(records, metric, WIDTH-22)], WIDTH), Spacer(1, 7)]
+    items += [paragraph('Słupki pokazują wszystkich uczniów z kategorią PAPL w danym pomiarze. Zmiany udziałów mogą częściowo wynikać ze zmiany składu grupy.', 9, MUTED)]
+    return items
 
 
 def aggregate_pdf(records, roster, title, by_class=False, use_ai=True):
@@ -318,21 +322,7 @@ def aggregate_pdf(records, roster, title, by_class=False, use_ai=True):
                               [badge_width], card=True, padding=7))
         badge_widths.append(badge_width)
     items += [grid([badge_row], badge_widths), Spacer(1, 5), legend()]
-    distribution_card = card([paragraph('Rozkład poziomów', 13, GREEN), Spacer(1, 5),
-                              *charts(records, turns, 8, 316)], 338)
-    score_items = [paragraph('Co najmniej sprawni', 12, GREEN), proficiency_chart(series[8], 139),
-                   paragraph('Średni wynik', 11, GREEN), Spacer(1, 4)]
-    for turn in turns:
-        values = [row['scores'][8] for row in records if row['turn'] == turn and row['scores'][8] is not None]
-        result = f'{mean(values):.1f}'.replace('.', ',') + ' pkt' if values else 'Brak wyniku'
-        score_items += [paragraph(f'{turn_label(turns, turn)} · n = {len(values)}', 8, MUTED),
-                        paragraph(result, 13), Spacer(1, 7)]
-    items += [grid([[distribution_card, '', card(score_items, 161)]], [338, 12, 161]), Spacer(1, 10)]
-    if len(turns) > 1:
-        items += [card([paragraph('Kierunek zmian u tych samych uczniów', 13, GREEN),
-                        paragraph('Pierwszy i ostatni ważny pomiar każdego ucznia.', 9, MUTED),
-                        *progress_items(records, 8, WIDTH-22)], WIDTH), Spacer(1, 7)]
-    items += [paragraph('Słupki pokazują wszystkich uczniów z kategorią PAPL w danym pomiarze. Zmiany udziałów mogą częściowo wynikać ze zmiany składu grupy.', 9, MUTED)]
+    items += metric_section(records, turns, 8, series[8])
     observed = [(values[-1], label) for metric, label in METRICS[1:]
                 if (values := series[metric])[-1] is not None]
     if observed:
@@ -363,19 +353,9 @@ def aggregate_pdf(records, roster, title, by_class=False, use_ai=True):
                 latest[by_student[row['student']]].append(row)
         for room in classes:
             comparison.append(distribution_row(f'Klasa {room}', *distribution(latest[room], turns[-1], 8), WIDTH - 22))
-    items += [PageBreak(), *heading('Cztery obszary alfabetyzacji ruchowej'),
-              paragraph('Profil grupy · co najmniej sprawni (skala 0–100%)', 12, GREEN),
-              domain_profile(series), Spacer(1, 4), legend()]
-    panels = []
     for metric, label in METRICS[1:]:
-        panel = [paragraph(label, 11, GREEN), Spacer(1, 3), *charts(records, turns, metric, 227),
-                 paragraph('Co najmniej sprawni', 9, GREEN), proficiency_chart(series[metric], 227, compact=True)]
-        if len(turns) > 1:
-            panel += progress_items(records, metric, 227)
-        panels.append(grid([[panel]], [249], card=True, padding=4))
-    items += [grid([[panels[0], '', panels[1]]], [249, 13, 249]), Spacer(1, 8),
-              grid([[panels[2], '', panels[3]]], [249, 13, 249]), Spacer(1, 10),
-              paragraph('Kolorowe znaczniki pod słupkiem opisują tylko wąskie segmenty. n oznacza liczbę uczniów z kategorią PAPL w danym pomiarze i obszarze.', 8, MUTED)]
+        items += [KeepTogether([Spacer(1, 12), *heading(label), legend(),
+                  *metric_section(records, turns, metric, series[metric])])]
 
     if comparison:
         items += [PageBreak(), *heading(f'Porównanie klas · {TURNS[turns[-1]]}'), legend()]
