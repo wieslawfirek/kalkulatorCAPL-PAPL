@@ -252,7 +252,7 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
                f'{sum(overall[2:])} z {n} uczniów z kategorią ({percent(sum(overall[2:]), n)}).'
                if n else f'{TURNS[latest]}. Brak kategorii PAPL dla wyniku ogólnego.')
     items = [paragraph(summary, 11), Spacer(1, 7)]
-    domain_directions = []
+    domain_directions = {}
     candidates = {}
     strengths = []
     for metric, label in METRICS[1:]:
@@ -299,7 +299,7 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
                 continue
             gained = sum(v for (a, b), v in domain_counts.items() if b > a)
             lost = sum(v for (a, b), v in domain_counts.items() if b < a)
-            domain_directions.append(f'{label} · wyżej {gained}, bez zmiany {domain_n-gained-lost}, niżej {lost} (n = {domain_n}).')
+            domain_directions[metric] = (domain_n, gained, lost)
             key = f'K{metric-3}'
             if domain_n >= 5 and lost > gained:
                 _, latest_counts = distribution(records, latest, metric)
@@ -326,15 +326,47 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
         candidates['K8'] = (1.1, f'W ostatnim pomiarze kategorię wyniku ogólnego ustalono dla {n} z {len(roster)} uczniów objętych raportem.')
     if len(turns) == 1:
         items[:0] = [paragraph('Kierunek zmian można ocenić po kolejnym pomiarze.', 10), Spacer(1, 6)]
-    if domain_directions:
-        items += [paragraph('Zmiany poziomu w obszarach u tych samych uczniów', 11, GREEN)]
-        items += [paragraph(line, 9) for line in domain_directions]
-        items.append(Spacer(1, 7))
     if strengths:
         _, label, high, size = max(strengths)
-        items += [paragraph(f'Najmocniejszy wynik grupy · {label}. Poziom co najmniej „Sprawny” osiągnęło {high} z {size} uczniów ({percent(high, size)}).', 10), Spacer(1, 6)]
+        items += [paragraph(f'Najmocniejszy obszar grupy w ostatnim pomiarze to „{label}”. Poziom co najmniej „Sprawny” osiągnęło w nim {high} z {size} uczniów ({percent(high, size)}).', 11), Spacer(1, 8)]
+    domain_context = {
+        4: 'Ten obszar pokazuje, jak uczniowie radzą sobie w zadaniach ruchowych.',
+        5: 'Wynik dotyczy codziennych zachowań związanych z ruchem.',
+        6: 'Wynik opiera się na odpowiedziach uczniów o ich doświadczeniach z ruchem.',
+        7: 'W tym obszarze oceniane są odpowiedzi na pytania dotyczące ruchu.',
+    }
+    items += [paragraph('Jak zmieniały się poszczególne obszary?', 12, GREEN), Spacer(1, 4)]
+    for metric, label in METRICS[1:]:
+        _, levels = distribution(records, latest, metric)
+        size = sum(levels)
+        if not size and metric not in domain_directions:
+            continue
+        description = domain_context[metric]
+        if size:
+            high = sum(levels[2:])
+            description += f' W ostatnim pomiarze {high} z {size} uczniów z kategorią osiągnęło poziom co najmniej „Sprawny”.'
+        if metric in domain_directions:
+            paired_n, gained, lost = domain_directions[metric]
+            if gained > lost:
+                trend = 'W tej grupie przeważyły przejścia na wyższy poziom.'
+            elif lost > gained:
+                trend = 'W tej grupie częstsze były przejścia na niższy poziom.'
+            elif gained:
+                trend = 'Tyle samo uczniów przeszło na wyższy i na niższy poziom.'
+            else:
+                trend = 'Wszyscy porównani uczniowie utrzymali poziom.'
+            description += (f' Wśród {paired_n} tych samych uczniów {gained} przeszło wyżej, '
+                            f'{paired_n-gained-lost} utrzymało poziom, a {lost} przeszło niżej. {trend}')
+        elif len(turns) > 1:
+            description += ' Brakuje par wyników do oceny kierunku zmian w tym obszarze.'
+        items.append(KeepTogether([paragraph(label, 11, GREEN), paragraph(description, 10), Spacer(1, 8)]))
     teaching_priorities = [key for key in ('K1', 'K2', 'K3', 'K4') if key in candidates]
     priority = max(teaching_priorities, key=lambda key: candidates[key][0]) if teaching_priorities else None
+    if priority:
+        items += [paragraph('Na czym się skupić?', 12, GREEN),
+                  paragraph(f'Proponowany punkt wyjścia to „{TEACHER[priority][0]}”. '
+                            f'{candidates[priority][1]} Poniżej znajdziesz działanie do wypróbowania '
+                            'i sposób sprawdzenia, czy pomaga uczniom.', 10), Spacer(1, 7)]
     order = sorted(candidates, key=lambda item: -candidates[item][0])[:4]
     variant = 2 if by_class else 1
     options = tuple((item, TEACHER[item][variant]) for item in order if item != priority)

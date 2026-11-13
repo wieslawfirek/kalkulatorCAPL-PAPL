@@ -94,7 +94,7 @@ CHILD_DOMAINS = {
 }
 
 CHILD_TRIALS = {
-    0: ('w torze ruchowym', 'udało Ci się zdobyć więcej punktów'),
+    0: ('w teście umiejętności ruchowych', 'udało Ci się zdobyć więcej punktów'),
     1: ('w biegu wahadłowym', 'udało Ci się ukończyć więcej odcinków'),
     2: ('w desce', 'udało Ci się dłużej utrzymać pozycję'),
     3: ('w pomiarze kroków', 'średnia dzienna liczba kroków wzrosła'),
@@ -186,7 +186,8 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
             if last['scores'][trial] > previous['scores'][trial]:
                 text += f' Brawo! W ostatniej dostępnej próbie {name} {achievement}.'
             elif last['scores'][trial] < previous['scores'][trial]:
-                text += f' W ostatniej dostępnej próbie {name} wynik był niższy niż wcześniej.'
+                text += (' W ostatniej dostępnej próbie deski pozycję udało Ci się utrzymać krócej niż wcześniej.'
+                         if trial == 2 else f' W ostatniej dostępnej próbie {name} wynik był niższy niż wcześniej.')
             else:
                 text += f' Wynik {name} pozostał taki sam.'
         if not history and not text:
@@ -212,7 +213,7 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
     notes = []
     if progress is not None:
         achievement = {
-            0: 'w torze ruchowym udało Ci się zdobyć więcej punktów',
+            0: 'w teście umiejętności ruchowych udało Ci się zdobyć więcej punktów',
             1: 'w biegu wahadłowym udało Ci się ukończyć więcej odcinków',
             2: 'w desce udało Ci się dłużej utrzymać pozycję',
             3: 'w dniach najnowszego pomiaru średnia dzienna liczba kroków była większa',
@@ -240,10 +241,12 @@ def child_feedback(records, norms, keys, fmt, use_ai=True):
     }.get(target, ('OG1', 'OG2'))
     options = tuple((item, CHILD[item]) for item in candidates)
     selected = model_choice(options) if use_ai else None
-    parent = {
-        4: 'Pomóż dziecku wybrać przybory i poziom trudności. Zauważ jedno konkretne wykonanie, które dziecko może powtórzyć.',
-        5: 'Wspólnie wybierzcie porę spaceru lub zabawy. Po niej zapytaj dziecko, co sprawiło mu przyjemność i czy chce to powtórzyć.',
-        6: 'Pozwól dziecku wybrać zabawę i osobę, z którą chce ćwiczyć. Doceń decyzję o podjęciu próby oraz to, co udało się wykonać.',
-        7: 'Poproś dziecko, by opowiedziało, co zauważyło w zabawie. Daj mu czas na własne wyjaśnienie.',
-    }.get(target, 'Zapytaj dziecko, co w raporcie zwróciło jego uwagę. Pomóż mu wybrać jedną zabawę, do której chce wrócić.')
-    return sections, CHILD[selected or candidates[0]], parent
+    focus = {
+        4: 'Skup się na jednej umiejętności wybranej wspólnie z dzieckiem. Jeśli wybierze rzut, zacznijcie od miękkiej piłki i bliskiego celu. Po kilku zabawach wróćcie do tego samego zadania i zauważcie, co dziecku wychodzi łatwiej.',
+        5: 'Skup się na okazjach do ruchu w zwykłym dniu. Wybierzcie stały moment, na przykład po szkole, oraz aktywność, na którą dziecko ma ochotę. Po tygodniu zapytaj, które dni i zabawy najlepiej pasowały do waszego planu.',
+        6: 'Skup się na tym, żeby dziecko mogło podjąć próbę na własnych warunkach. Daj mu wybrać zabawę, towarzystwo i łatwiejszą wersję zadania. Zauważ konkretnie, kiedy zaczęło, wróciło do próby lub samo wybrało trudniejszą wersję.',
+        7: 'Skup się na wykorzystaniu wiedzy w zabawie. Po spacerze lub grze zapytaj, kiedy oddech przyspieszył i jak można zmienić tempo. Przy następnej zabawie pozwól dziecku wybrać tempo i opowiedzieć, dlaczego takie wybrało.',
+    }.get(target, 'Zapytaj dziecko, co w raporcie zwróciło jego uwagę. Wybierzcie jedną zabawę, do której chce wrócić, i umówcie się, kiedy jej spróbujecie.')
+    if progress is not None:
+        focus += ' Wróćcie też do postępu wskazanego w części „Co warto zapamiętać?” i nazwijcie razem, co się poprawiło.'
+    return sections, CHILD[selected or candidates[0]], focus

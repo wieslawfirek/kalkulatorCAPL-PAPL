@@ -16,7 +16,7 @@ from reportlab.pdfgen.canvas import Canvas
 W, H = 595.28, 841.89
 ABBR = ('P', 'DP', 'S', 'W')
 LEGEND = ('P · Początkujący', 'DP · Dokonujący postępów', 'S · Sprawny', 'W · Wyróżniający się')
-LABELS = ('Średnia dzienna liczba kroków', 'Deska', 'Beep Test', 'CAMSA',
+LABELS = ('Średnia dzienna liczba kroków', 'Deska', 'Beep Test', 'Test umiejętności ruchowych',
           'Kompetencje fizyczne', 'Codzienne zachowania', 'Motywacja i pewność siebie', 'Wiedza i zrozumienie', 'Mój wynik ogólny w czasie')
 MONTHS = ('Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru')
 
