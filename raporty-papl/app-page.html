@@ -2,13 +2,38 @@
 <html lang="pl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Generator raportów PAPL</title>
 <style>
-body{margin:0;background:#edf3f7;color:#19334a;font:16px system-ui}main{max-width:760px;margin:6vh auto;padding:32px;background:white;border-radius:16px;box-shadow:0 8px 35px #19334a18}h1{margin-top:0}label{display:grid;gap:6px;font-weight:650}fieldset{display:grid;gap:16px;border:1px solid #c9d7e4;padding:20px;margin:20px 0;border-radius:10px}button,select,input{font:inherit;padding:9px;border:1px solid #9db4c7;border-radius:6px}button{background:#175574;color:white;cursor:pointer}button:disabled{opacity:.55;cursor:wait}#status{min-height:1.5em}small{color:#456176}
+*{box-sizing:border-box}
+body{margin:0;background:#f1f6f2;color:#173029;font:16px/1.5 system-ui,sans-serif}
+.brand{background:white;border-bottom:3px solid #174a3a}
+.brand div{max-width:960px;margin:auto;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.brand img:first-child{width:min(53vw,224px)}.brand img:last-child{width:66px}
+main{max-width:960px;margin:30px auto;padding:0 24px 35px}
+.intro{background:#174a3a;color:white;border-radius:18px;padding:26px 30px;margin-bottom:20px}
+h1{margin:2px 0 8px;font-size:clamp(26px,5vw,40px);line-height:1.15}h2{margin-top:0}
+.intro p{margin:0;color:#e0f1e7}.intro .eyebrow{font-size:12px;letter-spacing:.11em;text-transform:uppercase}
+.upload,#review,#ready,fieldset{background:white;border:1px solid #d7e2da;padding:20px;border-radius:12px}
+.upload{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:center}
+a{color:#135444;font-weight:650} label{display:grid;gap:6px;font-weight:650}
+fieldset{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0;min-width:0}
+button,select,input{font:inherit;padding:9px;border:1px solid #b6cbbf;border-radius:7px;min-width:0;max-width:100%}
+button{background:#174a3a;color:white;cursor:pointer}button:disabled{opacity:.55;cursor:wait}
+#status{min-height:1.5em}small{color:#52655b}
+@media(max-width:550px){main{margin-top:18px;padding-inline:14px}.intro{padding:20px}fieldset{grid-template-columns:1fr}}
 </style>
+<header class="brand"><div>
+<img src="/alfabet.jpg" alt="Alfabet Ruchowy">
+<img src="/wfz-awf.jpg" alt="WF z AWF">
+</div></header>
 <main>
+<section class="intro">
+<p class="eyebrow">Alfabetyzacja ruchowa · polskie normy PAPL</p>
 <h1>Generator raportów PAPL</h1>
-<p>Wczytaj arkusz z gotowymi wynikami, wybierz zakres i pobierz raport.</p>
-<p><a href="/szablon.xlsx" download>Pobierz szablon Excel</a></p>
+<p>Wczytaj wyniki pomiarów i przygotuj PDF dla ucznia, klasy albo szkoły.</p>
+</section>
+<div class="upload">
 <label>Plik Excel<input id="file" type="file" accept=".xlsx"></label>
+<a href="/szablon.xlsx" download>Pobierz szablon Excel</a>
+</div>
 <p id="status" role="status" aria-live="polite"></p>
 <form id="form" hidden>
 <fieldset>

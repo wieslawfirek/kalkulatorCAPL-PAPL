@@ -1,8 +1,10 @@
 {
   "functions": {
-    "api/handler.py": {"includeFiles": "{app-page.html,normy.csv,font.b64}", "maxDuration": 60}
+    "api/handler.py": {"includeFiles": "{app-page.html,normy.csv,font.b64,alfabet.jpg,wfz-awf.jpg}", "maxDuration": 60}
   },
   "rewrites": [
+    {"source": "/alfabet.jpg", "destination": "/api/handler?route=/alfabet.jpg"},
+    {"source": "/wfz-awf.jpg", "destination": "/api/handler?route=/wfz-awf.jpg"},
     {"source": "/", "destination": "/api/handler"},
     {"source": "/szablon.xlsx", "destination": "/api/handler?route=/szablon.xlsx"},
     {"source": "/import", "destination": "/api/handler?route=/import"},

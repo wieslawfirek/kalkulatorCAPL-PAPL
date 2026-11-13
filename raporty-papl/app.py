@@ -112,8 +112,8 @@ def import_excel(raw):
 def has_results(record):
     return any(value is not None for value in record['scores'])
 
-def individual(history):
-    return report([record for record in history if has_results(record)], NORMS, METRICS.values())
+def individual(history, use_ai=True):
+    return report([record for record in history if has_results(record)], NORMS, METRICS.values(), use_ai=use_ai)
 
 def download_template():
     from openpyxl import Workbook
@@ -194,6 +194,8 @@ class App(BaseHTTPRequestHandler):
         if not self.authorize():
             return
         path = self.route()
+        if path in ('/alfabet.jpg', '/wfz-awf.jpg'):
+            return self.send((ROOT / path[1:]).read_bytes(), 'image/jpeg')
         if path == '/szablon.xlsx':
             return self.send(download_template(), 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', filename='Szablon_wynikow_PAPL.xlsx')
         if path in ('/', '/api/handler'):
@@ -235,7 +237,7 @@ class App(BaseHTTPRequestHandler):
             if not selected or mode not in ('school','class','bundle'):
                 raise ValueError('Brak danych dla wybranego zakresu.')
             title = school if mode=='school' else f'{school} · klasa {room}'
-            report_bytes = aggregate_pdf(group_history(records,selected),selected,title,by_class=mode=='school')
+            report_bytes = aggregate_pdf(group_history(records,selected),selected,title,by_class=mode=='school', use_ai=mode!='bundle')
             if mode!='bundle' or fields.get('preview')=='1':
                 return self.send(report_bytes,'application/pdf',filename='raport-zbiorczy.pdf',inline=True)
             out = io.BytesIO()
@@ -243,7 +245,7 @@ class App(BaseHTTPRequestHandler):
                 archive.writestr('raport-klasy.pdf', report_bytes)
                 for i,r in enumerate(selected,1):
                     safe = re.sub(r'[^A-Za-z0-9_-]','_',r['student'])[:80]
-                    archive.writestr(f'indywidualne/{i:03d}-{safe}.pdf',individual(history[r['student']]))
+                    archive.writestr(f'indywidualne/{i:03d}-{safe}.pdf',individual(history[r['student']], use_ai=False))
             if out.tell()>4*1024*1024:
                 raise ValueError('Paczka jest za duża. Pobierz raport zbiorczy i raporty uczniów osobno.')
             return self.send(out.getvalue(),'application/zip',filename='raporty-klasy.zip')

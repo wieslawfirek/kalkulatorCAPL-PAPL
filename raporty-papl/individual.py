@@ -2,15 +2,18 @@ import base64
 import io
 import math
 from pathlib import Path
-from reportlab.lib.colors import HexColor, white
+from reportlab.lib.colors import white
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.platypus import Paragraph
+from xml.sax.saxutils import escape
+
+from branding import BANDS, GREEN as TEAL, INK, MUTED, PAPER as PANEL, RULE as BORDER, report_frame
+from feedback import child_feedback
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
 
 W, H = 595.28, 841.89
-INK, TEAL, MUTED = map(HexColor, ('#193444', '#00685f', '#486474'))
-BANDS = list(map(HexColor, ('#e4edf0', '#fbedcf', '#d3ede4', '#e3ddf4')))
-BORDER, PANEL = HexColor('#cfdee6'), HexColor('#eaf5f2')
 ABBR = ('P', 'DP', 'S', 'W')
 LEGEND = ('P · Początkujący', 'DP · Dokonujący postępów', 'S · Sprawny', 'W · Wyróżniający się')
 LABELS = ('Średnia dzienna liczba kroków', 'Deska', 'Beep Test', 'CAMSA',
@@ -25,7 +28,7 @@ def register_font():
 def fmt(value):
     return f'{value:,.2f}'.rstrip('0').rstrip('.').replace(',', ' ').replace('.', ',')
 
-def report(records, norms, metrics):
+def report(records, norms, metrics, use_ai=True):
     register_font()
     out = io.BytesIO()
     c = Canvas(out, pagesize=(W, H))
@@ -99,14 +102,18 @@ def report(records, norms, metrics):
             text(xx,ly+6,label,7.5,INK,True)
 
     def header(title,page):
-        rect(0,0,W,7,TEAL)
-        text(42,43,'CAPL-2 / RAPORT INDYWIDUALNY',9,TEAL)
-        text(42,79,title,25)
-        text(42,101,f'{latest["name"]}  ·  {latest["school"]}  ·  klasa {latest["classroom"]}  ·  liczba pomiarów: {len(records)}',9,MUTED)
-        rect(42,119,511,1,BORDER)
-        rect(42,789,511,1,BORDER)
-        text(42,805,'Polskie normy PAPL · progi dobrane według wieku w dniu testu i płci',8,MUTED)
-        text(535,805,f'{page}/2',8,MUTED)
+        report_frame(c, W, H, page)
+        text(42,67,'RAPORT INDYWIDUALNY',9,TEAL)
+        text(42,94,title,23)
+        metadata = f'{latest["name"]} · {latest["school"]} · klasa {latest["classroom"]} · pomiary {len(records)}'
+        block(metadata, 42, 103, 511, 9, MUTED)
+
+    def block(value, x, y, width, size, color=INK):
+        style = ParagraphStyle('PAPL', fontName='PAPL', fontSize=size, leading=size*1.28, textColor=color)
+        paragraph = Paragraph(escape(value), style)
+        _, height = paragraph.wrap(width, H)
+        paragraph.drawOn(c, x, H-y-height)
+        return height
 
     def legend(y):
         for i,label in enumerate(LEGEND):
@@ -138,13 +145,12 @@ def report(records, norms, metrics):
     for k, (unit, top) in enumerate(measures):
         chart(42+(k%2)*261, 146+(k//2)*224, 250, 205, k, unit, top)
     legend(597)
-    rect(42,618,511,112,PANEL,radius=9)
-    text(55,641,'Co się zmieniło?',12,TEAL)
-    beep,steps=change(2,'odc.'),change(0,'kroków')
-    lines=[f'Beep Test: {beep}' if beep else '',f'Średnia dzienna liczba kroków: {steps}' if steps else '']
-    text(55,661,' · '.join(v for v in lines if v) or 'Do porównania tych prób potrzebne są dwa dostępne wyniki.',9)
-    text(55,687,'Co możesz wypróbować?',12,TEAL)
-    text(55,707,'Wybierzcie razem dwa popołudnia na spacer albo zabawę na dworze.',9)
+    description, advice = child_feedback(records, norms, keys, fmt, use_ai=use_ai)
+    rect(42,610,511,172,white,BORDER,10)
+    text(55,630,'Mój wynik i co się zmieniło',12,TEAL)
+    end = 639 + block(description, 55, 639, 485, 10)
+    text(55,end+19,'Co mogę wypróbować?',12,TEAL)
+    block(advice, 55, end+25, 485, 10)
     c.showPage()
     c.save()
     return out.getvalue()
