@@ -29,7 +29,7 @@ def register_font():
 def fmt(value):
     return f'{value:,.2f}'.rstrip('0').rstrip('.').replace(',', ' ').replace('.', ',')
 
-def report(records, norms, metrics, use_ai=True):
+def report(records, norms, metrics, use_ai=True, feedback_result=None):
     register_font()
     out = io.BytesIO()
     c = Canvas(out, pagesize=(W, H))
@@ -147,7 +147,9 @@ def report(records, norms, metrics, use_ai=True):
         chart(42+(k%2)*261, 135+(k//2)*194, 250, 177, k, unit, top)
     legend(524)
     c.showPage()
-    sections, advice, parent = child_feedback(records, norms, keys, fmt, use_ai=use_ai)
+    sections, advice, parent = (feedback_result if feedback_result is not None else
+                                child_feedback(records, norms, keys, fmt, use_ai=use_ai))
+    sections = list(sections)  # Nie modyfikuj podsumowania współdzielonego z etapem AI.
     sections += [('Czego możesz spróbować?', advice), ('Dla rodzica', parent)]
     page = 3
     header('Co mówią Twoje wyniki?', page)
