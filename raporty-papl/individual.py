@@ -98,9 +98,13 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
         current = shown[-1]['levels'][metric]
         if current is not None and shown[-1]['scores'][metric] is not None:
             c.setStrokeColor(navy)
+            c.setFillColor(palette[current])
             c.setLineWidth(1.8)
+            # Fill the exact outlined shape, including the end-cap corners.
             c.roundRect(bar_x+current*zone_w-1, H-y-19, zone_w+2, 20,
-                        5, fill=0, stroke=1)
+                        5, fill=1, stroke=1)
+            text(bar_x+(current+.5)*zone_w,y+13,ABBR[current],10,
+                 white if current == 3 else navy,True,True)
         for level in range(4):
             group = [(i,r) for i,r in enumerate(shown)
                      if r['levels'][metric] == level and r['scores'][metric] is not None]
