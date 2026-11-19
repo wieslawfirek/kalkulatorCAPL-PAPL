@@ -195,8 +195,6 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
         c.setStrokeColor(HexColor('#86BED0'))
         c.setLineWidth(.6)
         c.line(408,H-y+12,408,H-y-30)
-        if any(r['scores'][metric] is not None and r['levels'][metric] is None for r in shown):
-            text(bar_x,y+38,'Brak normy: wynik bez znacznika',6,MUTED)
 
     report_frame(c,W,H,1,blue=True)
     rect(0,49,W,H-84,white)
@@ -209,6 +207,8 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
         d = r.get('test')
         label = d.strftime('%d.%m.%Y') if d else 'brak daty'
         text(45+i*172, 133, f'B{r["turn"]}: {label}', 8, MUTED)
+    if any(v is not None and l is None for r in shown for v,l in zip(r['scores'],r['levels'])):
+        text(34,144,'Brak części kategorii i znaczników — przyczyny wyjaśniono na stronie 2.',6.5,navy)
     card(148,91,cyan)
     row(178, 'Ogólny wynik|alfabetyzacji|ruchowej', 8, maximum=100)
     text(W/2,263,'Cztery filary alfabetyzacji ruchowej',18,navy,True,True)

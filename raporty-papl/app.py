@@ -103,7 +103,20 @@ def import_excel(raw):
                 if test < birth:
                     raise ValueError(f'Wiersz {i}: data testu poprzedza datę urodzenia.')
                 age = test.year - birth.year - ((test.month, test.day) < (birth.month, birth.day))
-            records.append(dict(student=student, name=' '.join(str(v).strip() for v in (first, last) if v) or student,
+            norm_issues=[]
+            if birth in (None,''):
+                norm_issues.append('brak daty urodzenia')
+            elif not isinstance(birth,date):
+                norm_issues.append('data urodzenia nie jest poprawną datą w Excelu')
+            if test in (None,''):
+                norm_issues.append('brak daty badania')
+            elif not isinstance(test,date):
+                norm_issues.append('data badania nie jest poprawną datą w Excelu')
+            if not sex:
+                norm_issues.append('brak płci')
+            if age is not None and not 8 <= age <= 12:
+                norm_issues.append(f'wiek {age} lat poza zakresem norm PAPL 8–12 lat')
+            records.append(dict(norm_issues=norm_issues,student=student, name=' '.join(str(v).strip() for v in (first, last) if v) or student,
                 surname=str(last).strip() if last is not None else '', given_name=str(first).strip() if first is not None else '',
                 sex=int(sex) if sex else None, age=age, test=test if isinstance(test, date) else None, school=school, classroom=classroom, turn=turn,
                 scores=scores, levels=[category(int(sex) if sex else None, age, m, v)

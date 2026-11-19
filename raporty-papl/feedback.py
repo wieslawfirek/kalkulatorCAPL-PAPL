@@ -144,6 +144,30 @@ SUPPORT_MEANINGS = {
 }
 
 
+def missing_category_notes(records):
+    """Explain missing classification for actual scores, separately by test."""
+    notes=[]
+    for row in sorted(records,key=lambda item:item['turn']):
+        if not any(value is not None and level is None
+                   for value,level in zip(row['scores'],row['levels'])):
+            continue
+        reasons=list(row.get('norm_issues',[]))
+        if not reasons:
+            if row.get('sex') is None:
+                reasons.append('brak płci')
+            age=row.get('age')
+            if age is None:
+                reasons.append('brak wieku możliwego do obliczenia z daty urodzenia i daty badania')
+            elif not 8<=age<=12:
+                reasons.append(f'wiek {age} lat poza zakresem norm PAPL 8–12 lat')
+        if not reasons:
+            reasons.append('brak właściwej normy dla części wyników')
+        notes.append(f'B{row["turn"]}: ' + '; '.join(reasons) + '.')
+    if notes:
+        notes.append('Wyniki liczbowe są pokazane, ale nie można przypisać kategorii ani umieścić znacznika dla tych pomiarów. Po uzupełnieniu danych należy ponownie wczytać plik i wygenerować raport.')
+    return ' '.join(notes)
+
+
 def child_feedback(records, norms, keys, fmt, use_ai=False):
     """Use fixed third-person templates; retain signature for single and ZIP callers.
 
@@ -190,5 +214,9 @@ def child_feedback(records, norms, keys, fmt, use_ai=False):
         parts.append('Wyniki te pomagają wskazać mocne strony dziecka oraz obszary, które wymagają dalszego wsparcia.')
     if available and len(available)<4:
         parts.append('Opis obejmuje tylko obszary z dostępnym wynikiem i właściwą normą.')
-    return [('Ogólny wynik alfabetyzacji ruchowej',overall),
-            ('Mocne strony i obszary do wsparcia',' '.join(parts))],ending,PARENT_TEXT.format(name=name)
+    sections=[('Ogólny wynik alfabetyzacji ruchowej',overall),
+              ('Mocne strony i obszary do wsparcia',' '.join(parts))]
+    notes=missing_category_notes(records)
+    if notes:
+        sections.insert(0,('Dlaczego brakuje kategorii',notes))
+    return sections,ending,PARENT_TEXT.format(name=name)
