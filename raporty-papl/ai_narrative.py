@@ -30,6 +30,7 @@ def generate_narrative(kind, facts, keys, max_chars=650):
     if not required:
         return None
     extra = {
+        'individual_friendly': 'Napisz dwa krótkie akapity po polsku dla dziecka w wieku 8–12 lat: overall i profile. Mów bezpośrednio do dziecka, spokojnie i życzliwie. Używaj krótkich, codziennych zdań. Wyjaśnij znaczenie zasobów i obszarów do wsparcia podanych w danych. Nie podawaj żadnych liczb, nazw kategorii, skrótów kategorii ani porównań z rówieśnikami: dokładne wyniki i kategorie dodaje program. Nie pisz o zmianie w czasie, wysiłku ani przyczynach wyników, których nie znamy. Nie proponuj ćwiczeń, zadań, planów ani celów. Nie dodawaj zaleceń dla rodziców ani zakończenia. overall do 350 znaków; profile do 500 znaków. Otrzymane zasoby i potrzeby są wiążące; przy braku danych nie dopisuj mocnych ani słabych stron.',
         'individual': 'Zwróć osobne refleksje o wyniku ogólnym i domenach; bez kopiowania liczb. Dla dziecka i rodzica osobne zalecenia kierunkowe.',
         'class': 'Dotyczy jednej klasy. Wyjaśnij mocne strony, obszar uwagi i kierunki pracy nauczyciela.',
         'school': 'Dotyczy szkoły. Wyjaśnij mocne strony, obszar uwagi i kierunki decyzji całej szkoły.',
@@ -74,3 +75,4 @@ def generate_narrative(kind, facts, keys, max_chars=650):
         return {key: answer[key].strip() for key in required}
     except (OSError, ValueError, TypeError, AttributeError, KeyError, TimeoutError):
         return None
+

@@ -12,6 +12,8 @@ from feedback import child_feedback
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
+from reportlab.lib.utils import ImageReader
+from report_badges import BADGES
 
 W, H = 595.28, 841.89
 ABBR = ('P', 'DP', 'S', 'W')
@@ -239,7 +241,7 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
     text(34, 801, 'B = numer badania. Znacznik wskazuje kategorię. Ramka = kategoria ostatniego badania.', 6.7, MUTED)
     c.showPage()
     sections, child, parent = (feedback_result if feedback_result is not None else
-                               child_feedback(records, norms, keys, fmt, use_ai=False))
+                               child_feedback(records, norms, keys, fmt, use_ai=use_ai))
     sections = list(sections) + [('Dla Ciebie', child), ('Dla rodziców', parent)]
     report_frame(c, W, H, 2, blue=True)
     rect(0,49,W,H-84,white)
@@ -247,7 +249,7 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
     name = latest.get('given_name') or latest.get('name', '')
     block(f'{name} • klasa {latest["classroom"]} • {latest["school"]}',40,96,511,9,navy)
     style = ParagraphStyle('Narracja',fontName='PAPL',fontSize=10.6,leading=15.5,
-                           textColor=navy,splitLongWords=True)
+                           textColor=navy,splitLongWords=True,alignment=TA_JUSTIFY)
     prepared = []
     for title,value in sections:
         paragraph = Paragraph(escape(keep_single_letters(value)),style)
@@ -257,8 +259,11 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
     # silently adding a third page or truncating a child's report.
     total = sum(height + (52 if title in ('Dla Ciebie','Dla rodziców') else 38)
                 for title,_,height in prepared)
-    if total > 650:
-        raise ValueError('Opis przekracza jedną stronę. Sprawdź długość danych dziecka.')
+    if total > 545:
+        # Fall back to the shorter approved copy when generated prose is too long.
+        if feedback_result is not None or use_ai:
+            return report(records,norms,metrics,use_ai=False)
+        raise ValueError('Opis przekracza miejsce nad znaczkami. Sprawdź długość danych dziecka.')
     y=133
     for title,paragraph,height in prepared:
         text(40,y,title,12.5,navy,bold=True)
@@ -271,6 +276,13 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
         else:
             paragraph.drawOn(c,40,H-y-height)
             y+=height+27
+    # Original images are small; keep their printed dimensions modest rather
+    # than inventing detail or changing the supplied lettering.
+    for encoded,x in zip(BADGES,(67,326)):
+        image=ImageReader(io.BytesIO(base64.b64decode(encoded)))
+        iw,ih=image.getSize()
+        scale=min(184/iw,100/ih)
+        c.drawImage(image,x+(184-iw*scale)/2,H-792,iw*scale,ih*scale,mask='auto')
     c.showPage()
     c.save()
     return out.getvalue()

@@ -123,11 +123,11 @@ PROFILE_DOMAINS = ((5, 'zachowania codzienne'), (4, 'kompetencje ruchowe'),
                    (6, 'motywacja i pewność siebie'), (7, 'wiedza i zrozumienie'))
 
 
-def child_feedback(records, norms, keys, fmt, use_ai=False):
+def child_feedback(records, norms, keys, fmt, use_ai=True):
     """Return approved sections, child ending and parent copy for the latest test.
 
-    Keep the legacy call signature for single/ZIP callers. use_ai is intentionally
-    ignored: individual reporting is deterministic, including when a key is set.
+    Numerical/category anchors and both endings are fixed. AI may only add
+    child-friendly explanation from anonymous categories, with fixed fallback.
     """
     recent = max(records, key=lambda row: row['turn'])
     name = str(recent.get('given_name') or recent.get('name', '').split(' ')[0]).strip() or 'Dziecko'
@@ -171,5 +171,64 @@ def child_feedback(records, norms, keys, fmt, use_ai=False):
             parts.append('Brak wyniku lub właściwej normy uniemożliwia ocenę pozostałych obszarów.')
     else:
         parts.append('Brak wyników lub właściwych norm nie pozwala wskazać mocnych i słabszych stron w czterech domenach.')
+    anchors = '; '.join(f'{title}: {("P","DP","S","W")[value]}'
+                        for _,title,value in available)
+    strong = [title for _,title,value in available if value >= 2]
+    support = [title for _,title,value in available if value < 2]
+    if strong:
+        profile = ('Twoje mocne strony w tym badaniu to: ' + ', '.join(strong)
+                   + '. To dobre podstawy do dalszej przygody z ruchem. ')
+    else:
+        profile = 'Twój alfabet ruchowy jest na etapie rozwijania podstaw. Masz przed sobą wiele okazji do uczenia się i odkrywania ruchu. '
+    if support:
+        profile += ('Więcej wsparcia potrzebujesz w obszarach: ' + ', '.join(support)
+                    + '. Ten wynik pokazuje, czemu warto poświęcić uwagę, i nie określa tego, co możesz osiągnąć w przyszłości. ')
+    elif available:
+        profile += 'Wszystkie ocenione obszary tworzą dobre podstawy do dalszego rozwoju. '
+    if len(available)<4:
+        profile += ' Nie wszystkie obszary można ocenić na podstawie dostępnych danych.'
+    if not available:
+        profile = 'Brakuje wyników lub właściwych norm, aby opisać Twoje mocne strony i obszary do wsparcia. Sam brak wyniku nie oznacza słabszych umiejętności.'
+
+    if use_ai:
+        facts = {
+            'overall_category': LEVELS[level] if level is not None else None,
+            'domains': {title: LEVELS[value] for _,title,value in available},
+            'missing_domains': [title for idx,title in PROFILE_DOMAINS
+                                if recent['scores'][idx] is None or recent['levels'][idx] is None],
+            'strengths': [title for _,title,value in available if value >= 2],
+            'needs_support': [title for _,title,value in available if value < 2],
+        }
+        friendly = friendly_explanation(json.dumps(facts,ensure_ascii=False,sort_keys=True))
+        if friendly:
+            # Keep exact categories outside AI-authored prose.
+            if level is not None:
+                prefix = (f'{name} znajduje się obecnie na poziomie „{LEVELS[level]}” '
+                          f'({("P","DP","S","W")[level]}) według norm PAPL. '
+                          f'Wynik ogólny w ostatnim badaniu wynosi {fmt(recent["scores"][8])} pkt. ')
+                overall = prefix + friendly['overall']
+            anchors = '; '.join(f'{title}: {("P","DP","S","W")[value]}'
+                                for _,title,value in available)
+            profile = friendly['profile']
+            if len(available)<4:
+                profile += ' Nie wszystkie obszary można ocenić na podstawie dostępnych danych.'
     return [('Ogólny wynik alfabetyzacji ruchowej', overall),
-            ('Mocne i słabsze strony', ' '.join(parts))], ending, PARENT_TEXT.format(name=name)
+            ('Mocne strony i obszary do wsparcia', profile)], ending, PARENT_TEXT.format(name=name)
+
+
+@lru_cache(maxsize=256)
+def friendly_explanation(serialized_facts):
+    """Cache anonymous profiles, never children's names or identifiers."""
+    answer = generate_narrative('individual_friendly',json.loads(serialized_facts),
+                                ('overall','profile'),max_chars=500)
+    if not answer:
+        return None
+    import re
+    for value in answer.values():
+        if re.search(r'\d|\b(?:P|DP|S|W)\b',value):
+            return None
+        if any(label.casefold() in value.casefold() for label in LEVELS):
+            return None
+    if len(answer['overall'])>350:
+        return None
+    return answer
