@@ -131,24 +131,52 @@ async function busy(button,action){
 el('form').onsubmit=e=>{e.preventDefault();showStudent=false;busy(el('preview'),preview)};
 el('example').onclick=()=>{showStudent=!showStudent;busy(el('example'),preview)};
 el('back').onclick=el('another').onclick=()=>screen('form');
+// Combine server-generated ZIP parts without decompressing or changing PDF data.
+function mergeReportZips(parts){
+ const bodies=[],directory=[];let bodySize=0,directorySize=0,count=0;
+ for(const buffer of parts){
+  const bytes=new Uint8Array(buffer),view=new DataView(buffer);
+  let end=bytes.length-22;
+  while(end>=Math.max(0,bytes.length-65557)&&view.getUint32(end,true)!==0x06054b50)end--;
+  if(end<0||view.getUint32(end,true)!==0x06054b50)throw Error('Nieprawidłowa paczka raportów.');
+  const entries=view.getUint16(end+10,true),start=view.getUint32(end+16,true);
+  let position=start;
+  for(let i=0;i<entries;i++){
+   if(view.getUint32(position,true)!==0x02014b50)throw Error('Nieprawidłowy spis raportów.');
+   const length=46+view.getUint16(position+28,true)+view.getUint16(position+30,true)+view.getUint16(position+32,true);
+   const record=bytes.slice(position,position+length),recordView=new DataView(record.buffer);
+   recordView.setUint32(42,view.getUint32(position+42,true)+bodySize,true);
+   directory.push(record);directorySize+=length;position+=length;
+  }
+  bodies.push(bytes.subarray(0,start));bodySize+=start;count+=entries;
+ }
+ if(count>65535||bodySize+directorySize>0xffffffff)throw Error('Za dużo raportów w jednej paczce.');
+ const end=new Uint8Array(22),view=new DataView(end.buffer);
+ view.setUint32(0,0x06054b50,true);view.setUint16(8,count,true);view.setUint16(10,count,true);
+ view.setUint32(12,directorySize,true);view.setUint32(16,bodySize,true);
+ return new Blob([...bodies,...directory,end],{type:'application/zip'});
+}
+
 el('generate').onclick=()=>busy(el('generate'),async()=>{
  downloadUrls.forEach(url=>URL.revokeObjectURL(url));downloadUrls=[];
  document.querySelectorAll('.download-part').forEach(link=>link.remove());
- const chosen=selection();let offset='',part=0;
+ const chosen=selection();let offset='',part=0,filename='raport.pdf';const parts=[];
  do {
-  status('Przygotowywanie raportów'+(part?' · kolejna część paczki':'')+'…');
+  status('Przygotowywanie raportów'+(part?' · pobrano '+part+' części':'')+'…');
   const response=await post('/report',{...chosen,bundle_offset:offset||'0'});
-  const url=URL.createObjectURL(await response.blob());downloadUrls.push(url);
-  const link=part?document.createElement('a'):el('download');
-  if(part){link.className='download-part';link.style.display='block';(document.querySelector('.download-part:last-of-type')||el('download')).after(link)}
-  link.href=url;
-  const disposition=response.headers.get('Content-Disposition')||'';
-  const utf8=disposition.match(/filename\*=UTF-8''([^;]+)/i);
-  const ascii=disposition.match(/filename="([^"]+)"/);
-  link.download=utf8?decodeURIComponent(utf8[1]):(ascii?ascii[1]:'raport.pdf');
-  link.textContent='Pobierz '+link.download;
+  parts.push(await response.arrayBuffer());
+  if(!part){
+   const disposition=response.headers.get('Content-Disposition')||'';
+   const utf8=disposition.match(/filename\*=UTF-8''([^;]+)/i);
+   const ascii=disposition.match(/filename="([^"]+)"/);
+   filename=utf8?decodeURIComponent(utf8[1]):(ascii?ascii[1]:'raport.pdf');
+  }
   offset=response.headers.get('X-PAPL-Next-Offset')||'';part++;
  } while(offset);
+ const blob=chosen.mode==='bundle'?mergeReportZips(parts):new Blob(parts,{type:'application/pdf'});
+ if(chosen.mode==='bundle')filename=filename.replace(/_od_\d+_do_\d+\.zip$/,'.zip');
+ const url=URL.createObjectURL(blob);downloadUrls.push(url);
+ const link=el('download');link.href=url;link.download=filename;link.textContent='Pobierz '+filename;
  status('');screen('ready');
 });
 </script>
