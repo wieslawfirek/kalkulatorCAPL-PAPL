@@ -187,7 +187,7 @@ def child_feedback(records, norms, keys, fmt, use_ai=False):
             parts.append(SUPPORT_MEANINGS[needs[0][0]])
         else:
             parts.append('Większego wsparcia wymagają następujące obszary: ' + ', '.join(title for _,title,_ in needs) + '.')
-        parts.append('Różnice te pomagają rozpoznać zasoby i potrzeby rozwojowe dziecka; nie określają jego możliwości na przyszłość.')
+        parts.append('Różnice te pomagają wskazać mocne strony dziecka oraz obszary, które wymagają dalszego wsparcia.')
     if available and len(available)<4:
         parts.append('Opis obejmuje tylko obszary z dostępnym wynikiem i właściwą normą.')
     return [('Ogólny wynik alfabetyzacji ruchowej',overall),
