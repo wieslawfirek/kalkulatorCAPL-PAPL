@@ -135,7 +135,11 @@ el('generate').onclick=()=>busy(el('generate'),async()=>{
  if(downloadUrl)URL.revokeObjectURL(downloadUrl);
  downloadUrl=URL.createObjectURL(await response.blob());
  const link=el('download');
- link.href=downloadUrl;link.download=response.headers.get('Content-Disposition').match(/filename="([^"]+)"/)[1];
+ link.href=downloadUrl;
+ const disposition=response.headers.get('Content-Disposition')||'';
+ const utf8=disposition.match(/filename\*=UTF-8''([^;]+)/i);
+ const ascii=disposition.match(/filename="([^"]+)"/);
+ link.download=utf8?decodeURIComponent(utf8[1]):(ascii?ascii[1]:'raport.pdf');
  link.textContent='Pobierz '+link.download;screen('ready');
 });
 </script>

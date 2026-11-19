@@ -7,6 +7,7 @@ import os
 import base64
 import hmac
 import zipfile
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 from individual import report, fmt
@@ -14,7 +15,7 @@ from feedback import child_feedback
 from aggregate import aggregate_pdf, group_history, reference_rosters
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlsplit, quote
 
 from openpyxl import load_workbook
 
@@ -134,6 +135,29 @@ def individual(history, use_ai=True, feedback_result=None):
     return report([record for record in history if has_results(record)], NORMS, METRICS.values(),
                   use_ai=use_ai, feedback_result=feedback_result)
 
+def individual_filename(history):
+    latest=max(history,key=lambda row:row['turn'])
+    def component(value,limit,fallback):
+        cleaned=re.sub(r'[^\w-]+','_',str(value or ''),flags=re.UNICODE).strip('_-')
+        return cleaned.encode('utf-8')[:limit].decode('utf-8',errors='ignore').rstrip('_-') or fallback
+    school=component(latest.get('school'),85,'szkola')
+    classroom=component(latest.get('classroom'),20,'klasa')
+    first=component(latest.get('given_name'),45,'')
+    last=component(latest.get('surname'),55,'')
+    person='_'.join(value for value in (first,last) if value)
+    if not person:
+        person=component(latest.get('name'),100,'uczen')
+    return f'Raport_PAPL_{school}_klasa_{classroom}_{person}.pdf'
+
+
+def content_disposition(filename,inline=False):
+    # ASCII fallback for older clients; RFC 5987 preserves Polish letters.
+    ascii_name=unicodedata.normalize('NFKD',filename.translate(str.maketrans('łŁ','lL'))).encode('ascii','ignore').decode()
+    ascii_name=re.sub(r'[^A-Za-z0-9_.-]','_',ascii_name)
+    return (('inline' if inline else 'attachment')+f'; filename="{ascii_name}"; '
+            +"filename*=UTF-8''"+quote(filename,safe=''))
+
+
 def download_template():
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -197,8 +221,7 @@ class App(BaseHTTPRequestHandler):
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
         if filename:
-            disposition = 'inline' if inline else 'attachment'
-            self.send_header('Content-Disposition', f'{disposition}; filename="{filename}"')
+            self.send_header('Content-Disposition', content_disposition(filename,inline))
         self.end_headers()
         self.wfile.write(body)
 
@@ -252,7 +275,7 @@ class App(BaseHTTPRequestHandler):
             if mode=='individual':
                 if not any(r['student']==student for r in selected):
                     raise ValueError('Wybierz ucznia z listy.')
-                return self.send(individual(history[student]),'application/pdf',filename='raport-ucznia.pdf',inline=True)
+                return self.send(individual(history[student]),'application/pdf',filename=individual_filename(history[student]),inline=True)
             if not selected or mode not in ('school','class','bundle'):
                 raise ValueError('Brak danych dla wybranego zakresu.')
             title = school if mode=='school' else f'{school} · klasa {room}'
@@ -281,9 +304,8 @@ class App(BaseHTTPRequestHandler):
                 archive.writestr('raport-klasy.pdf', report_bytes)
                 for i, (entry, rows, feedback_result) in enumerate(
                         zip(selected, student_rows, feedback_results), 1):
-                    safe = re.sub(r'[^A-Za-z0-9_-]','_',entry['student'])[:80]
                     archive.writestr(
-                        f'indywidualne/{i:03d}-{safe}.pdf',
+                        f'indywidualne/{i:03d}-{individual_filename(rows)}',
                         individual(rows, use_ai=False, feedback_result=feedback_result))
             if out.tell()>4*1024*1024:
                 raise ValueError('Paczka jest za duża. Pobierz raport zbiorczy i raporty uczniów osobno.')
