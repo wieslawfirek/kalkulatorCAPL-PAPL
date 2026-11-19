@@ -236,8 +236,8 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
     for i, label in enumerate(('P: Początkujący', 'DP: Dokonujący postępów',
                                 'S: Sprawny', 'W: Wyróżniający się')):
         x = 34 + (0, 116, 294, 383)[i]
-        rect(x, 779, 7, 7, palette[i], radius=1)
-        text(x+10, 786, label, 6.5, navy)
+        rect(x, 780, 10, 10, palette[i], radius=2)
+        text(x+14, 789, label, 10.5, navy)
     text(34, 801, 'B = numer badania. Znacznik wskazuje kategorię. Ramka = kategoria ostatniego badania.', 6.7, MUTED)
     c.showPage()
     sections, child, parent = (feedback_result if feedback_result is not None else
