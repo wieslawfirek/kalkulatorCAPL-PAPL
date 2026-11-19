@@ -179,8 +179,14 @@ def child_feedback(records, norms, keys, fmt, use_ai=False):
             parts.append(f'Obszary o relatywnie wyższej kategorii to: {better}.')
     else:
         # Use every relevant domain so ties never imply unmentioned needs do not exist.
-        parts.extend(STRENGTH_MEANINGS[idx] for idx,_,_ in strengths)
-        parts.extend(SUPPORT_MEANINGS[idx] for idx,_,_ in needs)
+        if len(strengths)==1:
+            parts.append(STRENGTH_MEANINGS[strengths[0][0]])
+        else:
+            parts.append('Mocne strony profilu obejmują: ' + ', '.join(title for _,title,_ in strengths) + '.')
+        if len(needs)==1:
+            parts.append(SUPPORT_MEANINGS[needs[0][0]])
+        else:
+            parts.append('Większego wsparcia wymagają następujące obszary: ' + ', '.join(title for _,title,_ in needs) + '.')
         parts.append('Różnice te pomagają rozpoznać zasoby i potrzeby rozwojowe dziecka; nie określają jego możliwości na przyszłość.')
     if available and len(available)<4:
         parts.append('Opis obejmuje tylko obszary z dostępnym wynikiem i właściwą normą.')
