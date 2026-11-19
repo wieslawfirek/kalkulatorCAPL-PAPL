@@ -31,10 +31,23 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
     latest = records[-1]
     keys = list(metrics)
 
-    def text(x, y, value, size=10, color=INK, centered=False):
+    def text(x, y, value, size=10, color=INK, centered=False, bold=False):
         c.setFont('PAPL', size)
         c.setFillColor(color)
-        (c.drawCentredString if centered else c.drawString)(x, H-y, str(value))
+        if bold:
+            c.saveState()
+            value = str(value)
+            offset = pdfmetrics.stringWidth(value, 'PAPL', size)/2 if centered else 0
+            obj = c.beginText(x-offset, H-y)
+            obj.setFont('PAPL', size)
+            obj.setTextRenderMode(2)
+            c.setStrokeColor(color)
+            c.setLineWidth(.28)
+            obj.textOut(value)
+            c.drawText(obj)
+            c.restoreState()
+        else:
+            (c.drawCentredString if centered else c.drawString)(x, H-y, str(value))
 
     def rect(x, y, w, h, fill, border=None, radius=0):
         c.setFillColor(fill)
@@ -62,81 +75,146 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
     # Category positions are deliberately independent of numerical scores.
     # Display the latest three measurements; keep all history for feedback.
     shown = records[-3:]
-    palette = tuple(map(HexColor, ('#F7B4C4', '#FFE17B', '#B7E69B', '#168450')))
-    navy = HexColor('#122447')
-    cyan = HexColor('#E7F7FA')
+    palette = tuple(map(HexColor, ('#FFB3C1', '#FFE16D', '#B8EF88', '#008B4C')))
+    navy = HexColor('#091C4F')
+    cyan = HexColor('#DDF5FA')
     marker_colors = (HexColor('#758295'), HexColor('#1776BB'), navy)
-    left, width = 32, 531
-    bar_x, bar_w, table_x, table_w = 214, 184, 411, 140
+    left, width = 24, 547
+    bar_x, bar_w, table_x, table_w = 215, 184, 416, 143
     col_w = table_w / len(shown)
 
     def category_bar(y, metric):
         zone_w = bar_w / 4
+        c.saveState()
+        clip = c.beginPath()
+        clip.roundRect(bar_x, H-y-18, bar_w, 18, 9)
+        c.clipPath(clip, stroke=0)
         for level, color in enumerate(palette):
-            rect(bar_x + level * zone_w, y, zone_w, 17, color)
-            text(bar_x + (level + .5) * zone_w, y + 12, ABBR[level], 9,
-                 white if level == 3 else navy, True)
+            rect(bar_x + level * zone_w, y, zone_w, 18, color)
+        c.restoreState()
+        for level in range(4):
+            text(bar_x + (level+.5)*zone_w, y+13, ABBR[level], 10,
+                 white if level == 3 else navy, True, True)
         current = shown[-1]['levels'][metric]
         if current is not None and shown[-1]['scores'][metric] is not None:
             c.setStrokeColor(navy)
             c.setLineWidth(1.8)
-            c.roundRect(bar_x + current * zone_w - 1, H-y-18,
-                        zone_w + 2, 19, 3, fill=0, stroke=1)
+            c.roundRect(bar_x+current*zone_w-1, H-y-19, zone_w+2, 20,
+                        5, fill=0, stroke=1)
         for level in range(4):
-            group = [(i, r) for i, r in enumerate(shown)
+            group = [(i,r) for i,r in enumerate(shown)
                      if r['levels'][metric] == level and r['scores'][metric] is not None]
-            for pos, (i, r) in enumerate(group):
-                xx = bar_x + (level + .5) * zone_w + (pos-(len(group)-1)/2)*14
+            for pos,(i,r) in enumerate(group):
+                xx = bar_x+(level+.5)*zone_w+(pos-(len(group)-1)/2)*15
                 color = marker_colors[i]
                 c.setStrokeColor(color)
                 c.setFillColor(white)
-                c.setLineWidth(1.3 if i == len(shown)-1 else .7)
+                c.setLineWidth(1.4 if i == len(shown)-1 else .85)
                 path = c.beginPath()
-                path.moveTo(xx-6.5, H-y-(-5))
-                path.lineTo(xx, H-y-(-1))
-                path.lineTo(xx+6.5, H-y-(-5))
-                c.drawPath(path, stroke=1, fill=1)
-                c.roundRect(xx-6.5, H-y+5, 13, 13, 4, fill=1, stroke=1)
-                text(xx, y-8, f'B{r["turn"]}', 5.7, color, True)
+                path.moveTo(xx-7, H-y+6)
+                path.lineTo(xx, H-y+1)
+                path.lineTo(xx+7, H-y+6)
+                path.lineTo(xx+7, H-y+15)
+                path.curveTo(xx+7,H-y+20,xx-7,H-y+20,xx-7,H-y+15)
+                path.close()
+                c.drawPath(path,stroke=1,fill=1)
+                text(xx,y-8,f'B{r["turn"]}',6.1,color,True,True)
 
     def numbers(y, metric, unit, headings=True):
+        c.setLineWidth(.4)
+        rect(table_x,y-17,table_w,44,white,HexColor('#C7D6E9'),5)
         if headings:
-            rect(table_x, y-17, table_w, 14, cyan, radius=3)
+            rect(table_x, y-17, table_w, 14, cyan, radius=4)
         for i, r in enumerate(shown):
             xx = table_x + (i+.5)*col_w
             if headings:
-                text(xx, y-7, f'B{r["turn"]}', 7.2, navy, True)
+                text(xx, y-7, f'B{r["turn"]}', 8, navy, True, True)
             value = r['scores'][metric]
             label = fmt(value) if value is not None else '-'
-            text(xx, y+11, label, 9, navy, True)
+            text(xx, y+11, label, 10, navy, True, True)
             text(xx, y+22, unit if value is not None else 'brak danych', 6, MUTED, True)
 
-    def row(y, title, metric, unit='pkt', maximum=None, compact=False):
-        block(title, 45 if compact else 48, y-7, 150, 10 if compact else 12, navy)
+    def icon(kind, x, y, color):
+        rect(x,y,34,34,color,radius=9)
+        c.saveState()
+        c.setStrokeColor(white)
+        c.setFillColor(white)
+        c.setLineWidth(1.7)
+        c.setLineCap(1)
+        def line(a,b,d,e):
+            c.line(x+a,H-y-b,x+d,H-y-e)
+        def circle(a,b,r,fill=0):
+            c.circle(x+a,H-y-b,r,stroke=1,fill=fill)
+        if kind == 'walk':
+            circle(21,7,2.3,1)
+            for pts in ((18,12,13,19),(18,12,23,18),(23,18,28,18),
+                        (17,14,10,13),(10,13,6,18),(14,19,22,22),
+                        (22,22,25,29),(14,19,10,26),(10,26,5,28)):
+                line(*pts)
+        elif kind == 'strength':
+            line(9,17,25,17)
+            for a in (7,25):
+                c.roundRect(x+a-2,H-y-24,4,14,1,stroke=1,fill=0)
+            line(3,14,3,20);line(31,14,31,20)
+        elif kind == 'smile':
+            circle(17,17,11)
+            circle(13,15,.7,1);circle(21,15,.7,1)
+            path=c.beginPath();path.moveTo(x+12,H-y-21)
+            path.curveTo(x+15,H-y-25,x+19,H-y-25,x+23,H-y-20)
+            c.drawPath(path)
+        else:
+            for a,b,r in ((12,10,5),(21,10,5),(9,18,5),(24,18,5),(13,25,5),(21,25,5)):
+                circle(a,b,r)
+            line(17,6,17,29)
+        c.restoreState()
+
+    def card(y,h,fill=white):
+        rect(left+1,y+2,width,h,HexColor('#EAF0F7'),radius=12)
+        c.setLineWidth(.7)
+        rect(left,y,width,h,fill,HexColor('#C7D6E9'),12)
+
+    def row(y, title, metric, unit='pkt', maximum=None, compact=False, symbol=None):
+        if symbol:
+            kind,color=symbol
+            icon(kind,35,y-12,HexColor(color))
+        x=41 if compact else (79 if symbol else 40)
+        title_width=128 if symbol else 163
+        labels = title.split('|')
+        for i,label in enumerate(labels):
+            text(x,y+4+i*13,label,10.5 if compact else 11.5,navy,bold=True)
         if maximum:
-            text(48, y+30, f'maks. {maximum} pkt', 8, MUTED)
+            text(x,y+9+len(labels)*13,f'(maks. {maximum} pkt)',8.5,navy)
         category_bar(y+9, metric)
         numbers(y+5, metric, unit)
+        c.setStrokeColor(HexColor('#86BED0'))
+        c.setLineWidth(.6)
+        c.line(408,H-y+12,408,H-y-30)
         if any(r['scores'][metric] is not None and r['levels'][metric] is None for r in shown):
-            text(bar_x, y+38, 'Brak normy: wynik bez znacznika', 6, MUTED)
+            text(bar_x,y+38,'Brak normy: wynik bez znacznika',6,MUTED)
 
-    header('Twój profil alfabetyzacji ruchowej', 1)
+    report_frame(c,W,H,1)
+    rect(0,49,W,H-84,white)
+    text(W/2,78,'Twój profil alfabetyzacji ruchowej',21,navy,True,True)
+    rect(111,89,373,21,cyan,radius=10)
+    text(W/2,104,f'PAPL • {latest["name"]} • klasa {latest["classroom"]}',10,navy,True,True)
+    block(latest['school'],40,115,515,8,MUTED)
     # Measurement dates remain visible, even when there are missing scores.
     for i, r in enumerate(shown):
         d = r.get('test')
         label = d.strftime('%d.%m.%Y') if d else 'brak daty'
         text(45+i*172, 133, f'B{r["turn"]}: {label}', 8, MUTED)
-    rect(left, 148, width, 91, cyan, BORDER, 10)
-    row(178, 'Ogólny wynik alfabetyzacji ruchowej', 8, maximum=100)
-    text(36, 263, 'Cztery filary alfabetyzacji ruchowej', 17, navy)
-    rect(left, 278, width, 102, white, BORDER, 9)
-    row(306, 'Zachowania codzienne', 5, maximum=30)
-    text(48, 365, 'Średnia liczba kroków/dzień', 8, navy)
+    card(148,91,cyan)
+    row(178, 'Ogólny wynik|alfabetyzacji|ruchowej', 8, maximum=100)
+    text(W/2,263,'Cztery filary alfabetyzacji ruchowej',18,navy,True,True)
+    card(278,102)
+    row(306,'Zachowania|codzienne',5,maximum=30,symbol=('walk','#22BDDE'))
+    rect(38,349,521,23,HexColor('#F0F8FD'),radius=6)
+    text(48,364,'Kroki/dzień',9,navy,bold=True)
     for i, r in enumerate(shown):
         v = r['scores'][3]
         text(table_x+(i+.5)*col_w, 365, fmt(v) if v is not None else '-', 8, navy, True)
-    rect(left, 391, width, 209, white, BORDER, 9)
-    row(419, 'Kompetencje ruchowe', 4, maximum=30)
+    card(391,209)
+    row(419,'Kompetencje|ruchowe',4,maximum=30,symbol=('strength','#69C41A'))
     for y, title, metric, unit in ((476, 'CAMSA', 0, 'pkt / 28'),
                                     (520, 'Deska', 2, 's'),
                                     (564, 'Beep test', 1, 'odc.')):
@@ -144,10 +222,11 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
         c.setLineWidth(.5)
         c.line(45, H-y+15, 551, H-y+15)
         row(y, title, metric, unit, compact=True)
-    rect(left, 611, width, 72, white, BORDER, 9)
-    row(638, 'Motywacja i pewność siebie', 6, maximum=30)
-    rect(left, 694, width, 72, white, BORDER, 9)
-    row(721, 'Wiedza i zrozumienie', 7, maximum=10)
+    card(611,72)
+    row(634,'Motywacja|i pewność siebie',6,maximum=30,symbol=('smile','#F5B900'))
+    card(694,72)
+    row(717,'Wiedza|i zrozumienie',7,maximum=10,symbol=('brain','#A580D9'))
+    rect(24,776,547,20,cyan,radius=8)
     for i, label in enumerate(('P: Początkujący', 'DP: Dokonujący postępów',
                                 'S: Sprawny', 'W: Wyróżniający się')):
         x = 34 + (0, 116, 294, 383)[i]
