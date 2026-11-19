@@ -246,7 +246,7 @@ class App(BaseHTTPRequestHandler):
                 report_bytes = aggregate_pdf(grouped, selected, title, by_class=mode=='school', use_ai=True)
                 return self.send(report_bytes, 'application/pdf', filename='raport-zbiorczy.pdf', inline=True)
 
-            # Generate anonymous friendly explanations concurrently for ZIP reports.
+            # Individual reports use fixed third-person templates in single and ZIP downloads.
             # Aggregate reporting retains its existing independent AI behavior.
             student_rows = [
                 sorted((row for row in history[entry['student']] if has_results(row)),
@@ -255,7 +255,7 @@ class App(BaseHTTPRequestHandler):
             ]
             metric_keys = tuple(METRICS.values())
             with ThreadPoolExecutor(max_workers=8) as pool:
-                futures = [pool.submit(child_feedback,rows,NORMS,metric_keys,fmt,use_ai=True)
+                futures = [pool.submit(child_feedback,rows,NORMS,metric_keys,fmt,use_ai=False)
                            for rows in student_rows]
                 aggregate_future = pool.submit(aggregate_pdf,grouped,selected,title,by_class=False,use_ai=True)
                 feedback_results = [future.result() for future in futures]
@@ -269,7 +269,7 @@ class App(BaseHTTPRequestHandler):
                     safe = re.sub(r'[^A-Za-z0-9_-]','_',entry['student'])[:80]
                     archive.writestr(
                         f'indywidualne/{i:03d}-{safe}.pdf',
-                        individual(rows, use_ai=True, feedback_result=feedback_result))
+                        individual(rows, use_ai=False, feedback_result=feedback_result))
             if out.tell()>4*1024*1024:
                 raise ValueError('Paczka jest za duża. Pobierz raport zbiorczy i raporty uczniów osobno.')
             return self.send(out.getvalue(),'application/zip',filename='raporty-klasy.zip')

@@ -123,112 +123,66 @@ PROFILE_DOMAINS = ((5, 'zachowania codzienne'), (4, 'kompetencje ruchowe'),
                    (6, 'motywacja i pewność siebie'), (7, 'wiedza i zrozumienie'))
 
 
-def child_feedback(records, norms, keys, fmt, use_ai=True):
-    """Return approved sections, child ending and parent copy for the latest test.
+# Fixed report copy. The category interpretation is supplied by the report author.
+GENERAL_TEMPLATES = (
+    '{name} znajduje się obecnie na poziomie „Początkujący” (P). Oznacza to, że {poss} poziom alfabetyzacji ruchowej jest niższy niż typowy dla rówieśników w tym samym wieku. {name} jest na etapie rozwijania kompetencji potrzebnych do podejmowania różnorodnych aktywności fizycznych.',
+    '{name} znajduje się obecnie na poziomie „Dokonujący postępów” (DP). Oznacza to, że {poss} poziom alfabetyzacji ruchowej jest zbliżony do typowego dla rówieśników w tym samym wieku. Posiada już rozwijające się kompetencje fizyczne, motywację i wiedzę, które stanowią podstawę aktywnego stylu życia.',
+    '{name} znajduje się obecnie na poziomie „Sprawny” (S). Oznacza to, że {achieved} oczekiwany, dobry ogólny poziom alfabetyzacji ruchowej, wyższy niż typowy dla wielu rówieśników w tym samym wieku. {poss_cap} wynik wskazuje na poziom kompetencji sprzyjający czerpaniu korzyści zdrowotnych z aktywnego stylu życia.',
+    '{name} znajduje się obecnie na poziomie „Wyróżniający się” (W). Oznacza to, że {achieved} bardzo wysoki poziom alfabetyzacji ruchowej, przewyższający wyniki większości rówieśników w tym samym wieku. Jest to najwyższa kategoria w badaniu PAPL, wskazująca na bardzo dobre podstawy do prowadzenia aktywnego i zdrowego stylu życia.',
+)
+STRENGTH_MEANINGS = {
+    5: 'Wynik zachowań codziennych stanowi mocną stronę profilu.',
+    4: 'Mocną stroną profilu są kompetencje ruchowe ocenione w badaniu.',
+    6: 'Mocną stroną profilu są motywacja i pewność siebie związane z aktywnością ruchową.',
+    7: 'Mocną stroną profilu są wiedza i zrozumienie zagadnień związanych z ruchem.',
+}
+SUPPORT_MEANINGS = {
+    5: 'Większego wsparcia wymagają zachowania codzienne związane z aktywnością fizyczną.',
+    4: 'Większego wsparcia wymaga rozwój kompetencji ruchowych.',
+    6: 'Większego wsparcia wymagają motywacja i pewność siebie związane z aktywnością ruchową.',
+    7: 'Większego wsparcia wymagają wiedza i zrozumienie zagadnień związanych z ruchem.',
+}
 
-    Numerical/category anchors and both endings are fixed. AI may only add
-    child-friendly explanation from anonymous categories, with fixed fallback.
+
+def child_feedback(records, norms, keys, fmt, use_ai=False):
+    """Use fixed third-person templates; retain signature for single and ZIP callers.
+
+    AI is deliberately not used, even when a legacy caller passes use_ai=True.
     """
-    recent = max(records, key=lambda row: row['turn'])
-    name = str(recent.get('given_name') or recent.get('name', '').split(' ')[0]).strip() or 'Dziecko'
-    level = recent['levels'][8] if recent['scores'][8] is not None else None
+    recent=max(records,key=lambda row:row['turn'])
+    name=str(recent.get('given_name') or recent.get('name','').split(' ')[0]).strip() or 'Dziecko'
+    sex=recent.get('sex')
+    female=sex==2
+    level=recent['levels'][8] if recent['scores'][8] is not None else None
     if level is None:
-        overall = (f'{name} ma w raporcie wyniki poszczególnych obszarów, ale dostępne dane '
-                   'nie pozwalają przypisać kategorii ogólnej. Opis dotyczy wyłącznie ocenionych obszarów.')
-        ending = ('Twoja podróż z alfabetem ruchowym trwa przez całe życie. Nowe doświadczenia '
-                  'i radość z ruchu mogą wspierać Twoje zdrowie, dobre samopoczucie i dalszy rozwój.')
+        overall=(f'{name} ma w raporcie wyniki poszczególnych obszarów, ale dostępne dane '
+                 'nie pozwalają przypisać kategorii ogólnej. Opis dotyczy wyłącznie ocenionych obszarów.')
+        ending=('Podróż z alfabetem ruchowym trwa przez całe życie. Nowe doświadczenia i radość '
+                'z ruchu mogą wspierać Twoje zdrowie, dobre samopoczucie i dalszy rozwój.')
     else:
-        overall = (f'{name} znajduje się obecnie na poziomie „{LEVELS[level]}” '
-                   f'({("P", "DP", "S", "W")[level]}) według zastosowanych norm PAPL. '
-                   f'W ostatnim badaniu wynik ogólny wynosi {fmt(recent["scores"][8])} pkt. '
-                   + OVERALL_TEXT[level])
-        ending = CHILD_ENDINGS[min(level, 2)]
-    available = [(i, title, recent['levels'][i]) for i, title in PROFILE_DOMAINS
-                 if recent['scores'][i] is not None and recent['levels'][i] is not None]
-    parts = []
-    if available:
-        for category in (3, 2, 1, 0):
-            labels = [title for _, title, value in available if value == category]
-            if labels:
-                parts.append(f'Kategoria „{LEVELS[category]}” obejmuje następujące obszary: '
-                             + ', '.join(labels) + '.')
-        best = max(value for _, _, value in available)
-        worst = min(value for _, _, value in available)
-        if worst >= 2:
-            parts.append('Wszystkie ocenione obszary stanowią zasoby w profilu wyników. '
-                         'Nie ma wśród nich obszaru w kategorii P lub DP.')
-        elif best != worst:
-            weaker = ', '.join(title for _, title, value in available if value == worst)
-            parts.append(f'Relatywnie słabsza część tego profilu to: {weaker}. '
-                         'To obszar dalszego wsparcia, a nie ocena możliwości dziecka.')
-            if best < 2:
-                parts.append('Również obszary o wyższej kategorii wymagają dalszego wsparcia.')
-        else:
-            parts.append('Wyniki ocenionych obszarów mieszczą się w tej samej kategorii. '
-                         'Nie wskazujemy na tej podstawie jednej mocnej ani słabszej strony; '
-                         'cały profil warto objąć wsparciem.')
-        if len(available) < 4:
-            parts.append('Brak wyniku lub właściwej normy uniemożliwia ocenę pozostałych obszarów.')
-    else:
-        parts.append('Brak wyników lub właściwych norm nie pozwala wskazać mocnych i słabszych stron w czterech domenach.')
-    anchors = '; '.join(f'{title}: {("P","DP","S","W")[value]}'
-                        for _,title,value in available)
-    strong = [title for _,title,value in available if value >= 2]
-    support = [title for _,title,value in available if value < 2]
-    if strong:
-        profile = ('Twoje mocne strony w tym badaniu to: ' + ', '.join(strong)
-                   + '. To dobre podstawy do dalszej przygody z ruchem. ')
-    else:
-        profile = 'Twój alfabet ruchowy jest na etapie rozwijania podstaw. Masz przed sobą wiele okazji do uczenia się i odkrywania ruchu. '
-    if support:
-        profile += ('Więcej wsparcia potrzebujesz w obszarach: ' + ', '.join(support)
-                    + '. Ten wynik pokazuje, czemu warto poświęcić uwagę, i nie określa tego, co możesz osiągnąć w przyszłości. ')
-    elif available:
-        profile += 'Wszystkie ocenione obszary tworzą dobre podstawy do dalszego rozwoju. '
-    if len(available)<4:
-        profile += ' Nie wszystkie obszary można ocenić na podstawie dostępnych danych.'
+        overall=GENERAL_TEMPLATES[level].format(name=name,poss='jej' if female else 'jego',
+                    poss_cap='Jej' if female else 'Jego',achieved='osiągnęła' if female else 'osiągnął')
+        ending=CHILD_ENDINGS[min(level,2)]
+    available=[(idx,title,recent['levels'][idx]) for idx,title in PROFILE_DOMAINS
+               if recent['scores'][idx] is not None and recent['levels'][idx] is not None]
+    strengths=sorted((item for item in available if item[2]>=2),key=lambda item:-item[2])
+    needs=sorted((item for item in available if item[2]<2),key=lambda item:item[2])
+    parts=[]
     if not available:
-        profile = 'Brakuje wyników lub właściwych norm, aby opisać Twoje mocne strony i obszary do wsparcia. Sam brak wyniku nie oznacza słabszych umiejętności.'
-
-    if use_ai:
-        facts = {
-            'overall_category': LEVELS[level] if level is not None else None,
-            'domains': {title: LEVELS[value] for _,title,value in available},
-            'missing_domains': [title for idx,title in PROFILE_DOMAINS
-                                if recent['scores'][idx] is None or recent['levels'][idx] is None],
-            'strengths': [title for _,title,value in available if value >= 2],
-            'needs_support': [title for _,title,value in available if value < 2],
-        }
-        friendly = friendly_explanation(json.dumps(facts,ensure_ascii=False,sort_keys=True))
-        if friendly:
-            # Keep exact categories outside AI-authored prose.
-            if level is not None:
-                prefix = (f'{name} znajduje się obecnie na poziomie „{LEVELS[level]}” '
-                          f'({("P","DP","S","W")[level]}) według norm PAPL. '
-                          f'Wynik ogólny w ostatnim badaniu wynosi {fmt(recent["scores"][8])} pkt. ')
-                overall = prefix + friendly['overall']
-            anchors = '; '.join(f'{title}: {("P","DP","S","W")[value]}'
-                                for _,title,value in available)
-            profile = friendly['profile']
-            if len(available)<4:
-                profile += ' Nie wszystkie obszary można ocenić na podstawie dostępnych danych.'
-    return [('Ogólny wynik alfabetyzacji ruchowej', overall),
-            ('Mocne strony i obszary do wsparcia', profile)], ending, PARENT_TEXT.format(name=name)
-
-
-@lru_cache(maxsize=256)
-def friendly_explanation(serialized_facts):
-    """Cache anonymous profiles, never children's names or identifiers."""
-    answer = generate_narrative('individual_friendly',json.loads(serialized_facts),
-                                ('overall','profile'),max_chars=500)
-    if not answer:
-        return None
-    import re
-    for value in answer.values():
-        if re.search(r'\d|\b(?:P|DP|S|W)\b',value):
-            return None
-        if any(label.casefold() in value.casefold() for label in LEVELS):
-            return None
-    if len(answer['overall'])>350:
-        return None
-    return answer
+        parts.append('Dostępne wyniki i normy nie pozwalają wskazać mocnych i słabszych stron profilu. Brak wyniku nie oznacza słabszych umiejętności.')
+    elif not needs:
+        parts.append('Wszystkie ocenione obszary mieszczą się w kategoriach „Sprawny” lub „Wyróżniający się” i stanowią mocne strony profilu. Nie wskazujemy obszaru wymagającego szczególnego wsparcia na podstawie tych kategorii.')
+    elif not strengths:
+        parts.append('Wszystkie ocenione obszary mieszczą się w kategoriach „Początkujący” lub „Dokonujący postępów” i wymagają dalszego wsparcia. Na podstawie tego profilu nie wyodrębniamy mocnej strony.')
+        if len({value for _,_,value in available})>1:
+            better=', '.join(title for _,title,value in available if value==1)
+            parts.append(f'Obszary o relatywnie wyższej kategorii to: {better}.')
+    else:
+        # Use every relevant domain so ties never imply unmentioned needs do not exist.
+        parts.extend(STRENGTH_MEANINGS[idx] for idx,_,_ in strengths)
+        parts.extend(SUPPORT_MEANINGS[idx] for idx,_,_ in needs)
+        parts.append('Różnice te pomagają rozpoznać zasoby i potrzeby rozwojowe dziecka; nie określają jego możliwości na przyszłość.')
+    if available and len(available)<4:
+        parts.append('Opis obejmuje tylko obszary z dostępnym wynikiem i właściwą normą.')
+    return [('Ogólny wynik alfabetyzacji ruchowej',overall),
+            ('Mocne strony i obszary do wsparcia',' '.join(parts))],ending,PARENT_TEXT.format(name=name)
