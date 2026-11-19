@@ -380,89 +380,38 @@ def student_tables(records, roster, turns):
 
 
 def aggregate_pdf(records, roster, title, by_class=False, use_ai=True):
+    from class_results import ResultsPage
     register_font()
-    out = io.BytesIO()
-    reference = roster[0]['turn']
-    turns = sorted({row['turn'] for row in records if any(v is not None for v in row['scores'])})
-    scope = 'Raport szkolny' if by_class else 'Raport klasowy'
-
+    out=io.BytesIO()
+    turns=sorted({row['turn'] for row in records if any(v is not None for v in row['scores'])})
+    if not roster or not turns:
+        raise ValueError('Brak danych do raportu zbiorczego.')
+    # One readable portrait page per result, matching the approved mockup.
+    measures=list(METRICS)+[(0,'CAMSA'),(2,'Deska'),(1,'Beep test'),(3,'Średnia dzienna liczba kroków')]
+    items=[]
+    for metric,label in measures:
+        if items:items.append(PageBreak())
+        items.append(ResultsPage(records,roster,turns,metric,label,by_class))
     def heading(label):
-        return [paragraph(scope.upper(), 9, GREEN), Spacer(1, 5), paragraph(title, 21),
-                paragraph(label, 14, GREEN), Spacer(1, 9)]
-
-    items = heading('Wynik ogólny alfabetyzacji ruchowej')
-    items += [paragraph(f'Skład grupy według pomiaru „{TURNS[reference]}” · {len(roster)} uczniów z wynikiem', 9, MUTED),
-              Spacer(1, 6)]
-    series = {metric: proficiency_series(records, turns, metric) for metric, _ in METRICS}
-    current_share = series[8][-1]
-    badges = [(str(len(roster)), 'Uczniowie w raporcie'),
-              (percent(current_share, 1) if current_share is not None else 'Brak danych',
-               'Co najmniej sprawni · ostatni pomiar')]
-    if len(turns) > 1:
-        progress_counts = student_progress(records, 8)[0]
-        compared = sum(progress_counts)
-        badges.append((percent(progress_counts[0], compared) if compared else 'Brak danych',
-                       f'Wyższa kategoria · n = {compared}'))
-    gap = 8
-    badge_width = (WIDTH - gap * (len(badges) - 1)) / len(badges)
-    badge_row, badge_widths = [], []
-    for value, label in badges:
-        if badge_row:
-            badge_row.append('')
-            badge_widths.append(gap)
-        badge_row.append(grid([[[paragraph(value, 16, GREEN), paragraph(label, 9, MUTED)]]],
-                              [badge_width], card=True, padding=7))
-        badge_widths.append(badge_width)
-    items += [grid([badge_row], badge_widths), Spacer(1, 5), legend()]
-    items += metric_section(records, turns, 8, series[8])
-    observed = [(values[-1], label) for metric, label in METRICS[1:]
-                if (values := series[metric])[-1] is not None]
-    if observed:
-        low, high = min(observed), max(observed)
-        items += [Spacer(1, 10), paragraph('Najważniejsze wnioski', 12, GREEN),
-                  paragraph(f'Największy udział uczniów na poziomie co najmniej „Sprawny” odnotowano w obszarze „{high[1]}”.'
-                            + (f' Najmniejszy udział odnotowano w obszarze „{low[1]}”.' if high[0] != low[0] else ''), 10, justify=True)]
-
-    changes_by_domain = [(values[-1]-values[0], label) for metric, label in METRICS[1:]
-                         if len(values := series[metric]) > 1 and values[0] is not None and values[-1] is not None]
-    if changes_by_domain:
-        best, worst = max(changes_by_domain), min(changes_by_domain)
-        if best[0] > 0:
-            items.append(paragraph(f'Największy wzrost udziału · {best[1]}', 10, GREEN))
-        if worst[0] < 0:
-            items.append(paragraph(f'Największy spadek udziału · {worst[1]}', 10))
-        elif 0 <= worst[0] < best[0]:
-            items.append(paragraph(f'Najmniejsza zmiana udziału · {worst[1]}', 10))
-
-
-    comparison = []
+        return [paragraph('RAPORT SZKOLNY' if by_class else 'RAPORT KLASOWY',9,HexColor('#091C4F')),
+                paragraph(title,14,HexColor('#091C4F')),Spacer(1,6),
+                paragraph(label,14,HexColor('#091C4F')),Spacer(1,10)]
     if by_class:
-        classes = sorted({row['classroom'] for row in roster})
-        by_student = {row['student']: row['classroom'] for row in roster}
-        latest = {room: [] for room in classes}
-        for row in records:
-            if row['turn'] == turns[-1]:
-                latest[by_student[row['student']]].append(row)
+        classes=sorted({row['classroom'] for row in roster})
+        membership={row['student']:row['classroom'] for row in roster}
+        items += [PageBreak(),*heading(f'Porównanie klas • B{turns[-1]}'),legend()]
         for room in classes:
-            comparison.append(distribution_row(f'Klasa {room}', *distribution(latest[room], turns[-1], 8), WIDTH - 22))
-    for metric, label in METRICS[1:]:
-        items += [KeepTogether([Spacer(1, 12), *heading(label), legend(),
-                  *metric_section(records, turns, metric, series[metric])])]
-
-    if comparison:
-        items += [PageBreak(), *heading(f'Porównanie klas · {TURNS[turns[-1]]}'), legend()]
-        items += [KeepTogether([card([row], WIDTH), Spacer(1, 3)]) for row in comparison]
-
-    items += [PageBreak(), *heading('Co wyniki podpowiadają do dalszej pracy?'),
-              *teacher_feedback(records, roster, turns, by_class, use_ai),
-              *student_tables(records, roster, turns)]
-
-    def decorate(canvas, doc):
-        report_frame(canvas, *A4, doc.page)
-
-    SimpleDocTemplate(out, pagesize=A4, leftMargin=36, rightMargin=36,
-                      topMargin=56, bottomMargin=38).build(
-        items, onFirstPage=decorate, onLaterPages=decorate)
+            members=[r for r in records if membership.get(r['student'])==room]
+            items += [KeepTogether([card([distribution_row(f'Klasa {room}',*distribution(members,turns[-1],8),WIDTH-22)],WIDTH),Spacer(1,5)])]
+    items += [PageBreak(),*heading('Co wyniki podpowiadają do dalszej pracy?'),
+              *teacher_feedback(records,roster,turns,by_class,use_ai),
+              *student_tables(records,roster,turns)]
+    def decorate(canvas,doc):
+        report_frame(canvas,*A4,doc.page,blue=True)
+        canvas.setFillColor(white)
+        canvas.rect(0,35,A4[0],A4[1]-84,fill=1,stroke=0)
+    SimpleDocTemplate(out,pagesize=A4,leftMargin=36,rightMargin=36,topMargin=56,bottomMargin=38).build(
+        items,onFirstPage=decorate,onLaterPages=decorate)
     return out.getvalue()
 
 
