@@ -1,14 +1,13 @@
 import base64
 import io
-import math
 from pathlib import Path
-from reportlab.lib.colors import white
+from reportlab.lib.colors import white, HexColor
 from reportlab.lib.enums import TA_JUSTIFY
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import Paragraph
 from xml.sax.saxutils import escape
 
-from branding import BANDS, GREEN as TEAL, INK, MUTED, PAPER as PANEL, RULE as BORDER, keep_single_letters, report_frame
+from branding import GREEN as TEAL, INK, MUTED, RULE as BORDER, keep_single_letters, report_frame
 from feedback import child_feedback
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -16,11 +15,6 @@ from reportlab.pdfgen.canvas import Canvas
 
 W, H = 595.28, 841.89
 ABBR = ('P', 'DP', 'S', 'W')
-LEGEND = ('P · Początkujący', 'DP · Dokonujący postępów', 'S · Sprawny', 'W · Wyróżniający się')
-LABELS = ('Średnia dzienna liczba kroków', 'Deska', 'Beep Test', 'Test umiejętności ruchowych',
-          'Kompetencje fizyczne', 'Codzienne zachowania', 'Motywacja do ruchu i pewność siebie', 'Wiedza i zrozumienie', 'Mój wynik ogólny w czasie')
-MONTHS = ('Sty', 'Lut', 'Mar', 'Kwi', 'Maj', 'Cze', 'Lip', 'Sie', 'Wrz', 'Paź', 'Lis', 'Gru')
-
 def register_font():
     if 'PAPL' not in pdfmetrics.getRegisteredFontNames():
         path = Path(__file__).with_name('font.b64')
@@ -36,7 +30,6 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
     records = sorted(records, key=lambda r:r['turn'])
     latest = records[-1]
     keys = list(metrics)
-    order = (3, 2, 1, 0, 4, 5, 6, 7, 8)
 
     def text(x, y, value, size=10, color=INK, centered=False):
         c.setFont('PAPL', size)
@@ -52,60 +45,10 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
         else:
             c.rect(x,H-y-h,w,h,fill=1,stroke=int(bool(border)))
 
-    def chart(x, y, w, h, idx, unit, maximum, show_age=False):
-        j = order[idx]
-        values = [r['scores'][j] for r in records]
-        thresholds = [norms.get((r['sex'],r['age'],keys[j])) for r in records]
-        top = maximum or max([1]+[v for v in values if v is not None]+[n[3] for n in thresholds if n])
-        if not maximum:
-            scale=10**math.floor(math.log10(top))
-            top=math.ceil(top/scale*2)/2*scale
-        rect(x,y,w,h,white,BORDER,10)
-        text(x+13,y+19,LABELS[idx],11 if w<280 else 14)
-        text(x+13,y+34,unit,8,MUTED)
-        left, plotw = x+34,w-49
-        start,end = y+45,y+h-(45 if show_age else 29)
-        step=plotw/len(records)
-        py=lambda v:end-(end-start)*max(0,min(top,v))/top
-        for i,n in enumerate(thresholds):
-            if n:
-                bounds=(0,*n[1:],top)
-                for a,b,color in zip(bounds,bounds[1:],BANDS):
-                    rect(left+i*step+2,py(b),step-4,max(0,py(a)-py(b)),color)
-        c.setStrokeColor(BORDER); c.setLineWidth(.45)
-        for v in (0,top/2,top):
-            yy=py(v)
-            c.line(left,H-yy,left+plotw,H-yy)
-            text(left-17,yy+2,fmt(v),6.5,MUTED,True)
-        previous=None
-        for i,(r,v) in enumerate(zip(records,values)):
-            xx=left+(i+.5)*step
-            d=r['test']
-            label=f'{MONTHS[d.month-1]} {d.year}' if d else f'Pomiar {r["turn"]}'
-            text(xx,end+15,label,7,MUTED,True)
-            if show_age:
-                text(xx,end+29,f'{r["age"]} lat' if r['age'] is not None else 'Brak wieku',7,MUTED,True)
-            if v is None:
-                previous=None
-                text(xx,end-8,'Brak',7,MUTED,True)
-                continue
-            yy=py(v)
-            c.setStrokeColor(TEAL);c.setLineWidth(1.5)
-            if previous:
-                c.line(previous[0],H-previous[1],xx,H-yy)
-            previous=xx,yy
-            c.setFillColor(TEAL);c.circle(xx,H-yy,3.3,fill=1,stroke=0)
-            level=r['levels'][j]
-            label=fmt(v)+(f' · {ABBR[level]}' if level is not None else '')
-            sw=pdfmetrics.stringWidth(label,'PAPL',7.5)+8
-            ly=yy-14 if yy>start+13 else yy+6
-            rect(xx-sw/2,ly-2,sw,11,white,radius=3)
-            text(xx,ly+6,label,7.5,INK,True)
-
     def header(title,page):
         report_frame(c, W, H, page)
         text(42,67,'RAPORT INDYWIDUALNY',9,TEAL)
-        text(42,94,title,23)
+        text(42,94,title,20)
         metadata = f'{latest["name"]} · {latest["school"]} · klasa {latest["classroom"]} · pomiary {len(records)}'
         block(metadata, 42, 103, 511, 9, MUTED)
 
@@ -116,42 +59,107 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
         paragraph.drawOn(c, x, H-y-height)
         return height
 
-    def legend(y):
-        for i,label in enumerate(LEGEND):
-            x=42+i*128
-            rect(x,y-7,9,9,BANDS[i],radius=2)
-            text(x+13,y,label,7.5,MUTED)
+    # Category positions are deliberately independent of numerical scores.
+    # Display the latest three measurements; keep all history for feedback.
+    shown = records[-3:]
+    palette = tuple(map(HexColor, ('#F7B4C4', '#FFE17B', '#B7E69B', '#168450')))
+    navy = HexColor('#122447')
+    cyan = HexColor('#E7F7FA')
+    marker_colors = (HexColor('#758295'), HexColor('#1776BB'), navy)
+    left, width = 32, 531
+    bar_x, bar_w, table_x, table_w = 214, 184, 411, 140
+    col_w = table_w / len(shown)
 
-    def change(idx, unit):
-        j=order[idx]
-        available=[r['scores'][j] for r in records if r['scores'][j] is not None]
-        if len(available)<2:
-            return None
-        delta=available[-1]-available[-2]
-        return ('+' if delta>0 else '')+fmt(delta)+' '+unit
+    def category_bar(y, metric):
+        zone_w = bar_w / 4
+        for level, color in enumerate(palette):
+            rect(bar_x + level * zone_w, y, zone_w, 17, color)
+            text(bar_x + (level + .5) * zone_w, y + 12, ABBR[level], 9,
+                 white if level == 3 else navy, True)
+        current = shown[-1]['levels'][metric]
+        if current is not None and shown[-1]['scores'][metric] is not None:
+            c.setStrokeColor(navy)
+            c.setLineWidth(1.8)
+            c.roundRect(bar_x + current * zone_w - 1, H-y-18,
+                        zone_w + 2, 19, 3, fill=0, stroke=1)
+        for level in range(4):
+            group = [(i, r) for i, r in enumerate(shown)
+                     if r['levels'][metric] == level and r['scores'][metric] is not None]
+            for pos, (i, r) in enumerate(group):
+                xx = bar_x + (level + .5) * zone_w + (pos-(len(group)-1)/2)*14
+                color = marker_colors[i]
+                c.setStrokeColor(color)
+                c.setFillColor(white)
+                c.setLineWidth(1.3 if i == len(shown)-1 else .7)
+                path = c.beginPath()
+                path.moveTo(xx-6.5, H-y-(-5))
+                path.lineTo(xx, H-y-(-1))
+                path.lineTo(xx+6.5, H-y-(-5))
+                c.drawPath(path, stroke=1, fill=1)
+                c.roundRect(xx-6.5, H-y+5, 13, 13, 4, fill=1, stroke=1)
+                text(xx, y-8, f'B{r["turn"]}', 5.7, color, True)
 
-    header('Mój profil alfabetyzacji ruchowej',1)
-    chart(42,135,511,258,8,'Punkty / 100',100,True)
-    rect(42,405,511,55,PANEL,radius=9)
-    delta=change(8,'pkt')
-    text(55,425,f'Zmiana względem poprzedniego dostępnego wyniku: {delta}' if delta else 'Porównanie wyniku ogólnego wymaga dwóch dostępnych wyników.',10,TEAL)
-    text(55,444,'Kolorowe pasma pokazują progi PAPL właściwe dla wieku w danym terminie.',9,MUTED)
-    for k in range(4):
-        chart(42+(k%2)*261,475+(k//2)*139,250,125,4+k,'Punkty / '+('10' if k==3 else '30'),10 if k==3 else 30)
-    legend(766)
-    c.showPage()
-    header('Moja aktywność i próby ruchowe',2)
-    measures = (('Kroki na dzień', None), ('Sekundy', None),
-                ('Ukończone odcinki 20 m', None), ('Punkty w próbie / 28', 28))
-    for k, (unit, top) in enumerate(measures):
-        chart(42+(k%2)*261, 135+(k//2)*194, 250, 177, k, unit, top)
-    legend(524)
+    def numbers(y, metric, unit, headings=True):
+        if headings:
+            rect(table_x, y-17, table_w, 14, cyan, radius=3)
+        for i, r in enumerate(shown):
+            xx = table_x + (i+.5)*col_w
+            if headings:
+                text(xx, y-7, f'B{r["turn"]}', 7.2, navy, True)
+            value = r['scores'][metric]
+            label = fmt(value) if value is not None else '-'
+            text(xx, y+11, label, 9, navy, True)
+            text(xx, y+22, unit if value is not None else 'brak danych', 6, MUTED, True)
+
+    def row(y, title, metric, unit='pkt', maximum=None, compact=False):
+        block(title, 45 if compact else 48, y-7, 150, 10 if compact else 12, navy)
+        if maximum:
+            text(48, y+30, f'maks. {maximum} pkt', 8, MUTED)
+        category_bar(y+9, metric)
+        numbers(y+5, metric, unit)
+        if any(r['scores'][metric] is not None and r['levels'][metric] is None for r in shown):
+            text(bar_x, y+38, 'Brak normy: wynik bez znacznika', 6, MUTED)
+
+    header('Twój profil alfabetyzacji ruchowej', 1)
+    # Measurement dates remain visible, even when there are missing scores.
+    for i, r in enumerate(shown):
+        d = r.get('test')
+        label = d.strftime('%d.%m.%Y') if d else 'brak daty'
+        text(45+i*172, 133, f'B{r["turn"]}: {label}', 8, MUTED)
+    rect(left, 148, width, 91, cyan, BORDER, 10)
+    row(178, 'Ogólny wynik alfabetyzacji ruchowej', 8, maximum=100)
+    text(36, 263, 'Cztery filary alfabetyzacji ruchowej', 17, navy)
+    rect(left, 278, width, 102, white, BORDER, 9)
+    row(306, 'Zachowania codzienne', 5, maximum=30)
+    text(48, 365, 'Średnia liczba kroków/dzień', 8, navy)
+    for i, r in enumerate(shown):
+        v = r['scores'][3]
+        text(table_x+(i+.5)*col_w, 365, fmt(v) if v is not None else '-', 8, navy, True)
+    rect(left, 391, width, 209, white, BORDER, 9)
+    row(419, 'Kompetencje ruchowe', 4, maximum=30)
+    for y, title, metric, unit in ((476, 'CAMSA', 0, 'pkt / 28'),
+                                    (520, 'Deska', 2, 's'),
+                                    (564, 'Beep test', 1, 'odc.')):
+        c.setStrokeColor(BORDER)
+        c.setLineWidth(.5)
+        c.line(45, H-y+15, 551, H-y+15)
+        row(y, title, metric, unit, compact=True)
+    rect(left, 611, width, 72, white, BORDER, 9)
+    row(638, 'Motywacja i pewność siebie', 6, maximum=30)
+    rect(left, 694, width, 72, white, BORDER, 9)
+    row(721, 'Wiedza i zrozumienie', 7, maximum=10)
+    for i, label in enumerate(('P: Początkujący', 'DP: Dokonujący postępów',
+                                'S: Sprawny', 'W: Wyróżniający się')):
+        x = 34 + (0, 116, 294, 383)[i]
+        rect(x, 779, 7, 7, palette[i], radius=1)
+        text(x+10, 786, label, 6.5, navy)
+    text(34, 801, 'B = numer badania. Znacznik wskazuje kategorię. Ramka = kategoria ostatniego badania.', 6.7, MUTED)
     c.showPage()
     sections, advice, parent = (feedback_result if feedback_result is not None else
                                 child_feedback(records, norms, keys, fmt, use_ai=use_ai))
     sections = list(sections)  # Nie modyfikuj podsumowania współdzielonego z etapem AI.
     sections += [('Czego możesz spróbować?', advice), ('Dla rodzica', parent)]
-    page = 3
+    page = 2
     header('Co mówią Twoje wyniki?', page)
     y = 142
     for title, value in sections:
@@ -173,3 +181,4 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
     c.showPage()
     c.save()
     return out.getvalue()
+
