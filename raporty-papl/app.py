@@ -153,6 +153,13 @@ def individual_filename(history):
     return f'Raport_PAPL_{school}_klasa_{classroom}_{person}.pdf'
 
 
+def class_filename(school, classroom, extension='pdf'):
+    def safe(value,limit,fallback):
+        value=re.sub(r'[^\w-]+','_',str(value or ''),flags=re.UNICODE).strip('_-')
+        return value.encode('utf-8')[:limit].decode('utf-8',errors='ignore').rstrip('_-') or fallback
+    return f'Raport_klasowy_PAPL_{safe(school,170,"szkola")}_klasa_{safe(classroom,35,"klasa")}.{extension}'
+
+
 def content_disposition(filename,inline=False):
     # ASCII fallback for older clients; RFC 5987 preserves Polish letters.
     ascii_name=unicodedata.normalize('NFKD',filename.translate(str.maketrans('łŁ','lL'))).encode('ascii','ignore').decode()
@@ -285,7 +292,7 @@ class App(BaseHTTPRequestHandler):
             grouped = group_history(records, selected)
             if mode != 'bundle' or fields.get('preview') == '1':
                 report_bytes = aggregate_pdf(grouped, selected, title, by_class=mode=='school', use_ai=True)
-                return self.send(report_bytes, 'application/pdf', filename='raport-zbiorczy.pdf', inline=True)
+                return self.send(report_bytes, 'application/pdf', filename='raport-zbiorczy.pdf' if mode=='school' else class_filename(school,room), inline=True)
 
             # Individual reports use fixed third-person templates in single and ZIP downloads.
             # Aggregate reporting retains its existing independent AI behavior.
@@ -304,7 +311,7 @@ class App(BaseHTTPRequestHandler):
 
             out = io.BytesIO()
             with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as archive:
-                archive.writestr('raport-klasy.pdf', report_bytes)
+                archive.writestr(class_filename(school,room), report_bytes)
                 for i, (entry, rows, feedback_result) in enumerate(
                         zip(selected, student_rows, feedback_results), 1):
                     archive.writestr(
@@ -312,7 +319,7 @@ class App(BaseHTTPRequestHandler):
                         individual(rows, use_ai=False, feedback_result=feedback_result))
             if out.tell()>4*1024*1024:
                 raise ValueError('Paczka jest za duża. Pobierz raport zbiorczy i raporty uczniów osobno.')
-            return self.send(out.getvalue(),'application/zip',filename='raporty-klasy.zip')
+            return self.send(out.getvalue(),'application/zip',filename=class_filename(school,room,'zip'))
         except ValueError as exc:
             return self.json({'error':str(exc)},400)
 
