@@ -97,6 +97,9 @@ def import_excel(raw):
             if (student, turn) in seen:
                 raise ValueError(f'Wiersz {i}: powtórzony identyfikator w tym samym pomiarze.')
             seen.add((student, turn))
+            # Normalize Excel timestamps regardless of whether both dates exist.
+            birth = birth.date() if isinstance(birth, datetime) else birth
+            test = test.date() if isinstance(test, datetime) else test
             age = None
             if isinstance(birth, date) and isinstance(test, date):
                 birth = birth.date() if isinstance(birth, datetime) else birth

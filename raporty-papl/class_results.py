@@ -1,7 +1,7 @@
 """Portrait result pages shared by class and school reports."""
 from collections import Counter
 from statistics import mean
-from datetime import date
+from datetime import date, datetime
 from xml.sax.saxutils import escape
 
 from reportlab.platypus import Flowable, Paragraph
@@ -93,7 +93,8 @@ class ResultsPage(Flowable):
             total,counts,average=result_summary(self.records,turn,self.metric)
             classified=sum(counts)
             text(10,top+20,f'B{turn}',17,bold=True)
-            dates=sorted({r['test'] for r in self.records if r['turn']==turn and isinstance(r.get('test'),date)})
+            dates=sorted({r['test'].date() if isinstance(r['test'],datetime) else r['test']
+                          for r in self.records if r['turn']==turn and isinstance(r.get('test'),date)})
             if len(dates)==1:text(10,top+35,dates[0].strftime('%d.%m.%Y'),6.8)
             elif dates:
                 text(10,top+34,dates[0].strftime('%d.%m.%Y'),6.2)
