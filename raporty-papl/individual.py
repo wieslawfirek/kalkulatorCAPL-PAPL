@@ -59,7 +59,7 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
             c.rect(x,H-y-h,w,h,fill=1,stroke=int(bool(border)))
 
     def header(title,page):
-        report_frame(c, W, H, page)
+        report_frame(c, W, H, page, blue=True)
         text(42,67,'RAPORT INDYWIDUALNY',9,TEAL)
         text(42,94,title,20)
         metadata = f'{latest["name"]} · {latest["school"]} · klasa {latest["classroom"]} · pomiary {len(records)}'
@@ -196,7 +196,7 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
         if any(r['scores'][metric] is not None and r['levels'][metric] is None for r in shown):
             text(bar_x,y+38,'Brak normy: wynik bez znacznika',6,MUTED)
 
-    report_frame(c,W,H,1)
+    report_frame(c,W,H,1,blue=True)
     rect(0,49,W,H-84,white)
     text(W/2,78,'Twój profil alfabetyzacji ruchowej',21,navy,True,True)
     rect(111,89,373,21,cyan,radius=10)
@@ -238,30 +238,39 @@ def report(records, norms, metrics, use_ai=True, feedback_result=None):
         text(x+10, 786, label, 6.5, navy)
     text(34, 801, 'B = numer badania. Znacznik wskazuje kategorię. Ramka = kategoria ostatniego badania.', 6.7, MUTED)
     c.showPage()
-    sections, advice, parent = (feedback_result if feedback_result is not None else
-                                child_feedback(records, norms, keys, fmt, use_ai=use_ai))
-    sections = list(sections)  # Nie modyfikuj podsumowania współdzielonego z etapem AI.
-    sections += [('Czego możesz spróbować?', advice), ('Dla rodzica', parent)]
-    page = 2
-    header('Co mówią Twoje wyniki?', page)
-    y = 142
-    for title, value in sections:
-        style = ParagraphStyle('Narracja', fontName='PAPL', fontSize=11, leading=15, textColor=INK,
-                               alignment=TA_JUSTIFY, splitLongWords=False)
-        paragraph = Paragraph(escape(keep_single_letters(value)), style)
-        _, height = paragraph.wrap(511, H)
-        heading_height = 22 if title else 0
-        if y + heading_height + height > 788:
-            c.showPage()
-            page += 1
-            header('Co mówią Twoje wyniki?', page)
-            y = 142
-        if title:
-            text(42, y + 12, title, 12, TEAL)
-            y += heading_height
-        paragraph.drawOn(c, 42, H - y - height)
-        y += height + 10
+    sections, child, parent = (feedback_result if feedback_result is not None else
+                               child_feedback(records, norms, keys, fmt, use_ai=False))
+    sections = list(sections) + [('Dla Ciebie', child), ('Dla rodziców', parent)]
+    report_frame(c, W, H, 2, blue=True)
+    rect(0,49,W,H-84,white)
+    text(40,83,'Co mówią wyniki',22,navy,bold=True)
+    name = latest.get('given_name') or latest.get('name', '')
+    block(f'{name} • klasa {latest["classroom"]} • {latest["school"]}',40,96,511,9,navy)
+    style = ParagraphStyle('Narracja',fontName='PAPL',fontSize=10.6,leading=15.5,
+                           textColor=navy,splitLongWords=True)
+    prepared = []
+    for title,value in sections:
+        paragraph = Paragraph(escape(keep_single_letters(value)),style)
+        _,height = paragraph.wrap(487 if title in ('Dla Ciebie','Dla rodziców') else 511,H)
+        prepared.append((title,paragraph,height))
+    # Fixed copy is bounded; preserve readable type and fail visibly rather than
+    # silently adding a third page or truncating a child's report.
+    total = sum(height + (52 if title in ('Dla Ciebie','Dla rodziców') else 38)
+                for title,_,height in prepared)
+    if total > 650:
+        raise ValueError('Opis przekracza jedną stronę. Sprawdź długość danych dziecka.')
+    y=133
+    for title,paragraph,height in prepared:
+        text(40,y,title,12.5,navy,bold=True)
+        y+=11
+        boxed=title in ('Dla Ciebie','Dla rodziców')
+        if boxed:
+            rect(32,y-2,531,height+24,HexColor('#EFF8FC'),radius=9)
+            paragraph.drawOn(c,44,H-y-height-9)
+            y+=height+41
+        else:
+            paragraph.drawOn(c,40,H-y-height)
+            y+=height+27
     c.showPage()
     c.save()
     return out.getvalue()
-

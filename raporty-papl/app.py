@@ -246,25 +246,17 @@ class App(BaseHTTPRequestHandler):
                 report_bytes = aggregate_pdf(grouped, selected, title, by_class=mode=='school', use_ai=True)
                 return self.send(report_bytes, 'application/pdf', filename='raport-zbiorczy.pdf', inline=True)
 
-            # Jedno wywołanie GPT na ucznia, wykonywane współbieżnie, a nie szeregowo.
-            # Generowanie PDF jest sekwencyjne (bezpieczne dla wspólnego rejestru czcionek ReportLab).
-            # Raport zbiorczy również korzysta z GPT. Gdy API nie odpowie, każda narracja
-            # niezależnie powróci do wersji deterministycznej.
+            # Individual copy is fixed and identical for single and ZIP downloads.
+            # Aggregate reporting retains its existing independent AI behavior.
             student_rows = [
                 sorted((row for row in history[entry['student']] if has_results(row)),
                        key=lambda row: row['turn'])
                 for entry in selected
             ]
             metric_keys = tuple(METRICS.values())
-            with ThreadPoolExecutor(max_workers=12) as pool:
-                aggregate_future = pool.submit(
-                    aggregate_pdf, grouped, selected, title, by_class=False, use_ai=True)
-                feedback_futures = [
-                    pool.submit(child_feedback, rows, NORMS, metric_keys, fmt, use_ai=True)
-                    for rows in student_rows
-                ]
-                feedback_results = [future.result() for future in feedback_futures]
-                report_bytes = aggregate_future.result()
+            feedback_results = [child_feedback(rows, NORMS, metric_keys, fmt, use_ai=False)
+                                for rows in student_rows]
+            report_bytes = aggregate_pdf(grouped, selected, title, by_class=False, use_ai=True)
 
             out = io.BytesIO()
             with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as archive:
@@ -274,7 +266,7 @@ class App(BaseHTTPRequestHandler):
                     safe = re.sub(r'[^A-Za-z0-9_-]','_',entry['student'])[:80]
                     archive.writestr(
                         f'indywidualne/{i:03d}-{safe}.pdf',
-                        individual(rows, use_ai=True, feedback_result=feedback_result))
+                        individual(rows, use_ai=False, feedback_result=feedback_result))
             if out.tell()>4*1024*1024:
                 raise ValueError('Paczka jest za duża. Pobierz raport zbiorczy i raporty uczniów osobno.')
             return self.send(out.getvalue(),'application/zip',filename='raporty-klasy.zip')
@@ -286,3 +278,4 @@ class App(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     HTTPServer(('127.0.0.1',8765),App).serve_forever()
+

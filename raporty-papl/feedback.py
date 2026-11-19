@@ -102,175 +102,74 @@ CHILD_TRIALS = {
 }
 
 
-def child_feedback(records, norms, keys, fmt, use_ai=True):
-    recent = records[-1]
-    available = {
-        idx: [row for row in records if row['scores'][idx] is not None]
-        for idx in range(9)
-    }
+# Approved fixed copy for individual reports. No external model is called here.
+INDIVIDUAL_COPY_VERSION = '2026-11-19-fixed-v1'
+PARENT_TEXT = ('Warto pamiętać, że {name} potrzebuje okazji do ruchu, życzliwego wsparcia i możliwości wyboru. '
+               'Doceniajcie podejmowane próby, wysiłek i małe osiągnięcia, które rzeczywiście obserwujecie. '
+               'Pytajcie, co sprawia dziecku przyjemność, i szukajcie dostępnych form wspólnej aktywności. '
+               'Wynik raportu może być punktem wyjścia do rozmowy z dzieckiem i nauczycielem.')
+OVERALL_TEXT = (
+    'Wynik wskazuje na potrzebę wsparcia w rozwijaniu kompetencji potrzebnych do podejmowania różnorodnych aktywności fizycznych. Kategoria opisuje rezultat badania, a nie możliwości dziecka na przyszłość.',
+    'Wynik wskazuje na rozwijające się podstawy alfabetu ruchowego oraz obszary, które warto dalej wspierać. Nazwa kategorii opisuje poziom wyniku; sama w sobie nie oznacza poprawy względem wcześniejszego badania.',
+    'Wynik wskazuje na dobrze rozwinięte podstawy alfabetyzacji ruchowej w zakresie objętym badaniem PAPL.',
+    'Jest to najwyższa kategoria w badaniu PAPL. Wynik wskazuje na bardzo dobrze rozwinięte podstawy alfabetyzacji ruchowej w zakresie objętym badaniem.',
+)
+CHILD_ENDINGS = (
+    'Pamiętaj, że Twoja podróż z alfabetem ruchowym trwa przez całe życie. Zdobywając nowe doświadczenia, możesz krok po kroku rozwijać swoje umiejętności i pewność siebie. Każda podejmowana aktywność może wspierać Twoje zdrowie, dobre samopoczucie i dalszy rozwój. Ważna jest także radość z ruchu.',
+    'Pamiętaj, że Twoja podróż z alfabetem ruchowym trwa przez całe życie. Opiera się na zdobywaniu nowych doświadczeń, emocjach, codziennych wyborach i radości z ruchu. Kontynuuj tę podróż — każda podejmowana aktywność może wspierać Twoje zdrowie, dobre samopoczucie i dalszy rozwój.',
+    'Twoja podróż z alfabetem ruchowym trwa przez całe życie. Masz już dobre podstawy do jej dalszego rozwijania — odkrywaj nowe formy aktywności i podejmuj kolejne wyzwania. Swoją postawą możesz inspirować koleżanki i kolegów, pokazując, że ruch jest źródłem zdrowia, radości i satysfakcji.',
+)
+PROFILE_DOMAINS = ((5, 'zachowania codzienne'), (4, 'kompetencje ruchowe'),
+                   (6, 'motywacja i pewność siebie'), (7, 'wiedza i zrozumienie'))
 
-    def trajectory(history, idx):
-        if len(history) < 2:
-            return ''
-        values = [row['scores'][idx] for row in history]
-        if len(values) == 3:
-            if values[0] < values[1] > values[2]:
-                return ' Wynik najpierw wzrósł, a w ostatnim badaniu był niższy.'
-            if values[0] > values[1] < values[2]:
-                return ' Wynik najpierw się obniżył, a w ostatnim badaniu wzrósł. To krok naprzód!'
-        if values[-1] > values[-2]:
-            return ' W ostatnim dostępnym badaniu wynik się poprawił. To postęp, który warto zauważyć!'
-        if values[-1] < values[-2]:
-            return ' W ostatnim dostępnym badaniu wynik był niższy niż poprzednio.'
-        return ' W dwóch ostatnich dostępnych badaniach wynik pozostał taki sam.'
 
-    def category_change(history, idx):
-        if len(history) < 2:
-            return ''
-        previous, current = history[-2:]
-        old, new = previous['levels'][idx], current['levels'][idx]
-        if old is None or new is None:
-            return ''
-        if old == new:
-            return ' W dwóch ostatnich dostępnych pomiarach poziom był taki sam.' if idx == 8 else ''
-        return f' W poprzednim dostępnym pomiarze wynik był na poziomie „{LEVELS[old]}”.'
+def child_feedback(records, norms, keys, fmt, use_ai=False):
+    """Return approved sections, child ending and parent copy for the latest test.
 
-    def current_result(idx, maximum):
-        current = available[idx][-1]
-        when = 'W najnowszym badaniu' if current is recent else 'W ostatnim badaniu z wynikiem w tej części'
-        level = current['levels'][idx]
-        text = f'{when} Twój wynik to {fmt(current["scores"][idx])} na {maximum} punktów.'
-        if level is not None:
-            text += f' Mieści się na poziomie „{LEVELS[level]}”.'
-        return text
-
-    overall = available[8]
-    introduction = ''
-    if recent['scores'][8] is None:
-        introduction = 'Z najnowszego badania mamy wyniki poszczególnych części. Brakuje wyniku łącznego. '
-    if overall:
-        introduction += current_result(8, 100)
-        current = overall[-1]
-        level = current['levels'][8]
-        if level is not None:
-            introduction += ' ' + LEVEL_MEANINGS[level]
-        introduction += trajectory(overall, 8) + category_change(overall, 8)
-        if len(overall) > 1:
-            previous = overall[-2]
-            old = previous['levels'][8]
-            earlier_norm = norms.get((previous['sex'], previous['age'], keys[8]))
-            latest_norm = norms.get((current['sex'], current['age'], keys[8]))
-            if (old is not None and level is not None and 0 < old and level < old
-                    and current['scores'][8] > previous['scores'][8] and earlier_norm and latest_norm):
-                old_threshold, new_threshold = earlier_norm[old], latest_norm[old]
-                old_rounded = round(current['scores'][8], earlier_norm[0])
-                clears_old = old_rounded >= old_threshold if old == 1 else old_rounded > old_threshold
-                if clears_old and new_threshold > old_threshold:
-                    introduction += ' Punktów jest więcej, a do poprzedniego poziomu w tym badaniu potrzeba było wyższego wyniku.'
-    sections = [('', introduction.strip())]
-    for idx, (title, meaning, suggestion) in CHILD_DOMAINS.items():
-        history = available[idx]
-        trials = [trial for trial in ((1, 2, 0) if idx == 4 else (3,) if idx == 5 else ())
-                  if available[trial]]
-        if not history and not trials:
-            continue
-        text = meaning if history else ''
-        if history:
-            text += ' ' + current_result(idx, 10 if idx == 7 else 30)
-            text += trajectory(history, idx) + category_change(history, idx)
-        for trial in trials:
-            trial_history = available[trial]
-            if len(trial_history) < 2:
-                continue
-            previous, last = trial_history[-2:]
-            name, achievement = CHILD_TRIALS[trial]
-            if last['scores'][trial] > previous['scores'][trial]:
-                text += f' Brawo! W ostatniej dostępnej próbie {name} {achievement}.'
-            elif last['scores'][trial] < previous['scores'][trial]:
-                text += (' W ostatniej dostępnej próbie deski czas utrzymania pozycji był krótszy niż wcześniej.'
-                         if trial == 2 else f' W ostatniej dostępnej próbie {name} wynik był niższy niż wcześniej.')
-            else:
-                text += f' Wynik {name} pozostał taki sam.'
-        if not history and not text:
-            text = 'Kolejna próba pozwoli zobaczyć, jak zmieni się Twój wynik w tej części.'
-        if history:
-            level = history[-1]['levels'][idx]
-            if level == 0:
-                text += ' Zacznij od łatwiejszej wersji zabawy, którą chcesz wypróbować.'
-            elif level == 1:
-                text += ' To dobry punkt wyjścia do utrwalania tego, co już Ci wychodzi.'
-            text += ' ' + suggestion
-        sections.append((title, text.strip()))
-
-    latest_domains = [idx for idx in CHILD_DOMAINS if recent['scores'][idx] is not None
-                      and recent['levels'][idx] is not None]
-    strengths = [idx for idx in latest_domains if recent['levels'][idx] >= 2]
-    needs = [idx for idx in latest_domains if recent['levels'][idx] < 2]
-    target = min(needs, key=lambda idx: recent['levels'][idx]) if needs else None
-    progress = next((idx for idx in (1, 2, 0, 7, 4, 3, 5, 6, 8)
-                     if len(available[idx]) >= 2 and available[idx][-1] is recent
-                     and fmt(recent['scores'][idx]) != fmt(available[idx][-2]['scores'][idx])
-                     and recent['scores'][idx] > available[idx][-2]['scores'][idx]), None)
-    notes = []
-    if progress is not None:
-        achievement = {
-            0: 'w teście umiejętności ruchowych udało Ci się zdobyć więcej punktów',
-            1: 'w biegu wahadłowym udało Ci się ukończyć więcej odcinków',
-            2: 'w desce udało Ci się dłużej utrzymać pozycję',
-            3: 'w dniach najnowszego pomiaru średnia dzienna liczba kroków była większa',
-            4: 'Twój wynik w zestawie zadań ruchowych wzrósł',
-            5: 'Twój wynik w części o codziennym ruchu wzrósł',
-            6: 'Twój wynik odpowiedzi o motywacji do ruchu i pewności siebie wzrósł',
-            7: 'w odpowiedziach na pytania o ruch udało Ci się zdobyć więcej punktów',
-            8: 'Twój wynik ogólny wzrósł',
-        }
-        notes.append(f'Zauważ swój postęp. W porównaniu z poprzednim dostępnym pomiarem {achievement[progress]}.')
-    if strengths:
-        best = max(strengths, key=lambda idx: recent['levels'][idx])
-        notes.append(f'Twoja mocna strona w tym badaniu to obszar „{CHILD_DOMAINS[best][0]}”.')
-    if not strengths and latest_domains:
-        best = max(latest_domains, key=lambda idx: recent['levels'][idx])
-        if recent['levels'][best] > min(recent['levels'][idx] for idx in latest_domains):
-            notes.append(f'Wśród ocenionych obszarów najwyższy poziom ma Twój wynik w części „{CHILD_DOMAINS[best][0]}”.')
-    if target is not None:
-        notes.append(f'Jeśli chcesz wybrać jeden obszar do dalszej pracy, zacznij od „{CHILD_DOMAINS[target][0]}”.')
-    if notes:
-        sections.append(('Co warto zapamiętać?', ' '.join(notes)))
-
-    candidates = {
-        4: ('RU2', 'RU1'), 5: ('AK1', 'AK2'), 6: ('MP1', 'MP2'), 7: ('WI1', 'WI2'),
-    }.get(target, ('OG1', 'OG2'))
-    options = tuple((item, CHILD[item]) for item in candidates)
-    selected = None  # Wskazówki awaryjne pozostają deterministyczne.
-    focus = {
-        4: 'Skup się na jednej umiejętności wybranej wspólnie z dzieckiem. Jeśli wybierze rzut, zacznijcie od miękkiej piłki i bliskiego celu. Po kilku zabawach wróćcie do tego samego zadania i zauważcie, co dziecku wychodzi łatwiej.',
-        5: 'Skup się na okazjach do ruchu w zwykłym dniu. Wybierzcie stały moment, na przykład po szkole, oraz aktywność, na którą dziecko ma ochotę. Po tygodniu zapytaj, które dni i zabawy najlepiej pasowały do waszego planu.',
-        6: 'Skup się na tym, żeby dziecko mogło podjąć próbę na własnych warunkach. Daj mu wybrać zabawę, towarzystwo i łatwiejszą wersję zadania. Zauważ konkretnie, kiedy zaczęło, wróciło do próby lub samo wybrało trudniejszą wersję.',
-        7: 'Skup się na wykorzystaniu wiedzy w zabawie. Po spacerze lub grze zapytaj, kiedy oddech przyspieszył i jak można zmienić tempo. Przy następnej zabawie pozwól dziecku wybrać tempo i opowiedzieć, dlaczego takie wybrało.',
-    }.get(target, 'Zapytaj dziecko, co w raporcie zwróciło jego uwagę. Wybierzcie jedną zabawę, do której chce wrócić, i umówcie się, kiedy jej spróbujecie.')
-    if progress is not None:
-        focus += ' Wróćcie też do postępu wskazanego w części „Co warto zapamiętać?” i nazwijcie razem, co się poprawiło.'
-    advice = CHILD[selected or candidates[0]]
-    if use_ai:
-        # Do usługi trafiają anonimowe opisy wyników, bez nazwiska, szkoły, klasy ani daty urodzenia.
-        narrative_keys = ['overall'] + [f'domain_{idx}' for idx in CHILD_DOMAINS
-                                         if any(title == CHILD_DOMAINS[idx][0] for title, _ in sections)]
-        narrative_keys += ['child_advice', 'parent_advice']
-        facts = {
-            'wyniki_i_zmiany': [{'sekcja': title or 'wynik ogólny', 'dane': body}
-                               for title, body in sections],
-            'obszar_do_wsparcia': CHILD_DOMAINS[target][0] if target is not None else None,
-            'udokumentowany_postep': notes[0] if progress is not None and notes else None,
-            'wskazowki_pomocnicze': {'dla_dziecka': advice, 'dla_rodzica': focus},
-        }
-        generated = generate_narrative('individual', facts, narrative_keys, max_chars=560)
-        if generated:
-            enriched = []
-            for title, body in sections:
-                key = 'overall' if not title else next(
-                    (f'domain_{idx}' for idx in CHILD_DOMAINS if CHILD_DOMAINS[idx][0] == title), None)
-                # Dane liczbowe i kategorie zostają w niezmienionym opisie wyliczonym przez aplikację.
-                enriched.append((title, body + ' ' + generated[key] if key in generated else body))
-            sections = enriched
-            advice, focus = generated['child_advice'], generated['parent_advice']
-    return sections, advice, focus
+    Keep the legacy call signature for single/ZIP callers. use_ai is intentionally
+    ignored: individual reporting is deterministic, including when a key is set.
+    """
+    recent = max(records, key=lambda row: row['turn'])
+    name = str(recent.get('given_name') or recent.get('name', '').split(' ')[0]).strip() or 'Dziecko'
+    level = recent['levels'][8] if recent['scores'][8] is not None else None
+    if level is None:
+        overall = (f'{name} ma w raporcie wyniki poszczególnych obszarów, ale dostępne dane '
+                   'nie pozwalają przypisać kategorii ogólnej. Opis dotyczy wyłącznie ocenionych obszarów.')
+        ending = ('Twoja podróż z alfabetem ruchowym trwa przez całe życie. Nowe doświadczenia '
+                  'i radość z ruchu mogą wspierać Twoje zdrowie, dobre samopoczucie i dalszy rozwój.')
+    else:
+        overall = (f'{name} znajduje się obecnie na poziomie „{LEVELS[level]}” '
+                   f'({("P", "DP", "S", "W")[level]}) według zastosowanych norm PAPL. '
+                   f'W ostatnim badaniu wynik ogólny wynosi {fmt(recent["scores"][8])} pkt. '
+                   + OVERALL_TEXT[level])
+        ending = CHILD_ENDINGS[min(level, 2)]
+    available = [(i, title, recent['levels'][i]) for i, title in PROFILE_DOMAINS
+                 if recent['scores'][i] is not None and recent['levels'][i] is not None]
+    parts = []
+    if available:
+        for category in (3, 2, 1, 0):
+            labels = [title for _, title, value in available if value == category]
+            if labels:
+                parts.append(f'Kategoria „{LEVELS[category]}” obejmuje następujące obszary: '
+                             + ', '.join(labels) + '.')
+        best = max(value for _, _, value in available)
+        worst = min(value for _, _, value in available)
+        if worst >= 2:
+            parts.append('Wszystkie ocenione obszary stanowią zasoby w profilu wyników. '
+                         'Nie ma wśród nich obszaru w kategorii P lub DP.')
+        elif best != worst:
+            weaker = ', '.join(title for _, title, value in available if value == worst)
+            parts.append(f'Relatywnie słabsza część tego profilu to: {weaker}. '
+                         'To obszar dalszego wsparcia, a nie ocena możliwości dziecka.')
+            if best < 2:
+                parts.append('Również obszary o wyższej kategorii wymagają dalszego wsparcia.')
+        else:
+            parts.append('Wyniki ocenionych obszarów mieszczą się w tej samej kategorii. '
+                         'Nie wskazujemy na tej podstawie jednej mocnej ani słabszej strony; '
+                         'cały profil warto objąć wsparciem.')
+        if len(available) < 4:
+            parts.append('Brak wyniku lub właściwej normy uniemożliwia ocenę pozostałych obszarów.')
+    else:
+        parts.append('Brak wyników lub właściwych norm nie pozwala wskazać mocnych i słabszych stron w czterech domenach.')
+    return [('Ogólny wynik alfabetyzacji ruchowej', overall),
+            ('Mocne i słabsze strony', ' '.join(parts))], ending, PARENT_TEXT.format(name=name)
