@@ -21,7 +21,7 @@ from openpyxl import load_workbook
 ROOT = Path(__file__).resolve().parent
 METRICS = dict(zip(
     ('Wynik CAMSA', 'Wynik Beep Testu', 'Wynik Deski', 'Średnia dzienna liczba kroków',
-     'Kompetencje fizyczne (pkt)', 'Zachowania codzienne (pkt)',
+     'Kompetencje ruchowe (pkt)', 'Zachowania codzienne (pkt)',
      'Motywacja i pewność siebie (pkt)', 'Wiedza i zrozumienie (pkt)', 'Ogólny wynik alfabetyzacji ruchowej (pkt)'),
     ('camsa_skill_time_score', 'pacer_20m_laps', 'plank_time', 'step_average',
      'pc_score', 'db_score', 'mc_score', 'ku_score', 'capl_score')
@@ -70,6 +70,8 @@ def import_excel(raw):
             raise ValueError('Arkusz przekracza limit 30 000 wierszy lub 100 kolumn.')
         source = sheet.values
         header = [v.strip() if isinstance(v, str) else v for v in next(source, ())]
+        # Accept older spreadsheets while new templates use the updated term.
+        header = ['Kompetencje ruchowe (pkt)' if v == 'Kompetencje fizyczne (pkt)' else v for v in header]
         required = (*FIELDS, *METRICS)
         missing = [field for field in required if header.count(field) != 1]
         if missing:

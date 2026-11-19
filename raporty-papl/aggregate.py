@@ -22,7 +22,7 @@ TURNS = {1: 'Pretest', 2: 'Posttest', 3: 'Pomiar po roku'}
 LEVELS = ('Początkujący', 'Dokonujący postępów', 'Sprawny', 'Wyróżniający się')
 METRICS = (
     (8, 'Ogólny wynik alfabetyzacji ruchowej'),
-    (4, 'Kompetencje fizyczne'),
+    (4, 'Kompetencje ruchowe'),
     (5, 'Zachowania codzienne'),
     (6, 'Motywacja i pewność siebie'),
     (7, 'Wiedza i zrozumienie'),
@@ -587,3 +587,4 @@ def teacher_feedback(records, roster, turns, by_class, use_ai):
                 content += [Spacer(1, 3), material_paragraph(reference, pdf_page)]
         items += [Spacer(1, 6), card(content, WIDTH)]
     return items
+

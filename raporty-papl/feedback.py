@@ -22,7 +22,7 @@ CHILD = {
 }
 
 TEACHER = {
-    'K1': ('Kompetencje fizyczne',
+    'K1': ('Kompetencje ruchowe',
            'Skup się na podstawowych umiejętnościach ruchowych, które według obserwacji wymagają wsparcia. Zwróć uwagę, czy uczniowie wykonują je coraz pewniej i samodzielniej.',
            'Ustalcie wspólny priorytet w rozwijaniu podstawowych umiejętności ruchowych. Obserwujcie, czy w kolejnych klasach rośnie samodzielność uczniów w wybranym obszarze.'),
     'K2': ('Okazje do ruchu w ciągu dnia',
@@ -126,7 +126,7 @@ PROFILE_DOMAINS = ((5, 'zachowania codzienne'), (4, 'kompetencje ruchowe'),
 # Fixed report copy. The category interpretation is supplied by the report author.
 GENERAL_TEMPLATES = (
     '{name} znajduje się obecnie na poziomie „Początkujący” (P). Oznacza to, że {poss} poziom alfabetyzacji ruchowej jest niższy niż typowy dla rówieśników w tym samym wieku. {name} jest na etapie rozwijania kompetencji potrzebnych do podejmowania różnorodnych aktywności fizycznych.',
-    '{name} znajduje się obecnie na poziomie „Dokonujący postępów” (DP). Oznacza to, że {poss} poziom alfabetyzacji ruchowej jest zbliżony do typowego dla rówieśników w tym samym wieku. Posiada już rozwijające się kompetencje fizyczne, motywację i wiedzę, które stanowią podstawę aktywnego stylu życia.',
+    '{name} znajduje się obecnie na poziomie „Dokonujący postępów” (DP). Oznacza to, że {poss} poziom alfabetyzacji ruchowej jest zbliżony do typowego dla rówieśników w tym samym wieku. Posiada już rozwijające się kompetencje ruchowe, motywację i wiedzę, które stanowią podstawę aktywnego stylu życia.',
     '{name} znajduje się obecnie na poziomie „Sprawny” (S). Oznacza to, że {achieved} oczekiwany, dobry ogólny poziom alfabetyzacji ruchowej, wyższy niż typowy dla wielu rówieśników w tym samym wieku. {poss_cap} wynik wskazuje na poziom kompetencji sprzyjający czerpaniu korzyści zdrowotnych z aktywnego stylu życia.',
     '{name} znajduje się obecnie na poziomie „Wyróżniający się” (W). Oznacza to, że {achieved} bardzo wysoki poziom alfabetyzacji ruchowej, przewyższający wyniki większości rówieśników w tym samym wieku. Jest to najwyższa kategoria w badaniu PAPL, wskazująca na bardzo dobre podstawy do prowadzenia aktywnego i zdrowego stylu życia.',
 )
