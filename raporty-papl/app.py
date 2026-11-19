@@ -223,13 +223,15 @@ class App(BaseHTTPRequestHandler):
         self.wfile.write(b'Dostep wymaga konfiguracji hasla PAPL_PASSWORD.')
         return False
 
-    def send(self, body, kind, status=200, filename=None, inline=False):
+    def send(self, body, kind, status=200, filename=None, inline=False, extra_headers=None):
         self.send_response(status)
         self.send_header('Content-Type', kind)
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
+        for key, value in (extra_headers or {}).items():
+            self.send_header(key, str(value))
         if filename:
             self.send_header('Content-Disposition', content_disposition(filename,inline))
         self.end_headers()
@@ -294,32 +296,52 @@ class App(BaseHTTPRequestHandler):
                 report_bytes = aggregate_pdf(grouped, selected, title, by_class=mode=='school', use_ai=True)
                 return self.send(report_bytes, 'application/pdf', filename='raport-zbiorczy.pdf' if mode=='school' else class_filename(school,room), inline=True)
 
+            offset = int(fields.get('bundle_offset', '0'))
+            if offset < 0 or offset >= len(selected):
+                raise ValueError('Nieprawidłowa część paczki.')
+            batch = selected[offset:offset + 10]
             # Individual reports use fixed third-person templates in single and ZIP downloads.
             # Aggregate reporting retains its existing independent AI behavior.
             student_rows = [
                 sorted((row for row in history[entry['student']] if has_results(row)),
                        key=lambda row: row['turn'])
-                for entry in selected
+                for entry in batch
             ]
             metric_keys = tuple(METRICS.values())
             with ThreadPoolExecutor(max_workers=8) as pool:
                 futures = [pool.submit(child_feedback,rows,NORMS,metric_keys,fmt,use_ai=False)
                            for rows in student_rows]
-                aggregate_future = pool.submit(aggregate_pdf,grouped,selected,title,by_class=False,use_ai=True)
+                aggregate_future = pool.submit(aggregate_pdf,grouped,selected,title,by_class=False,use_ai=True) if offset == 0 else None
                 feedback_results = [future.result() for future in futures]
-                report_bytes = aggregate_future.result()
+                report_bytes = aggregate_future.result() if aggregate_future else None
 
-            out = io.BytesIO()
-            with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as archive:
-                archive.writestr(class_filename(school,room), report_bytes)
-                for i, (entry, rows, feedback_result) in enumerate(
-                        zip(selected, student_rows, feedback_results), 1):
-                    archive.writestr(
-                        f'indywidualne/{i:03d}-{individual_filename(rows)}',
-                        individual(rows, use_ai=False, feedback_result=feedback_result))
-            if out.tell()>4*1024*1024:
-                raise ValueError('Paczka jest za duża. Pobierz raport zbiorczy i raporty uczniów osobno.')
-            return self.send(out.getvalue(),'application/zip',filename=class_filename(school,room,'zip'))
+            files = []
+            if report_bytes is not None:
+                files.append((class_filename(school,room), report_bytes))
+            consumed = 0
+            payload = b''
+            for i, (entry, rows, feedback_result) in enumerate(
+                    zip(batch, student_rows, feedback_results), offset + 1):
+                candidate = (f'indywidualne/{i:03d}-{individual_filename(rows)}',
+                             individual(rows, use_ai=False, feedback_result=feedback_result))
+                out = io.BytesIO()
+                with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as archive:
+                    for name, data in files + [candidate]:
+                        archive.writestr(name, data)
+                if out.tell() > 4 * 1024 * 1024:
+                    if not consumed:
+                        raise ValueError('Pojedynczy raport przekracza limit pobrania.')
+                    break
+                files.append(candidate)
+                payload = out.getvalue()
+                consumed += 1
+            next_offset = offset + consumed
+            more = next_offset < len(selected)
+            filename = class_filename(school,room,'zip')
+            if offset or more:
+                filename = filename[:-4] + f'_od_{offset + 1}_do_{next_offset}.zip'
+            return self.send(payload,'application/zip',filename=filename,
+                             extra_headers={'X-PAPL-Next-Offset': next_offset if more else ''})
         except ValueError as exc:
             return self.json({'error':str(exc)},400)
 
